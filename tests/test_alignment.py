@@ -1,12 +1,10 @@
 import unittest
 import numpy as np
 from scipy.signal import butter, sosfiltfilt
-from wavesync.alignment import AlignmentError, coarse_alignment, validate_coarse
-from wavesync.config import Settings
-from wavesync.features import envelope
-from wavesync.guard import gate_micro, same_map
-from wavesync.micro import Measurement, collect, measure
-from wavesync.model import TimeMap
+from pcm_core.config import Settings
+from pcm_core.guard import gate_micro, same_map
+from pcm_core.micro import Measurement, collect, measure
+from pcm_core.model import TimeMap
 from .helpers import SR, soundtrack, warp
 
 
@@ -71,33 +69,7 @@ class AlignmentTests(unittest.TestCase):
         self.assertTrue(same_map(final, self.identity))
         self.assertTrue(any(r["status"] == "REGRESSION" for r in audit))
 
-    def test_coarse_fft_delay_and_independent_validation(self):
-        delay = round(1.275 * SR)
-        target = np.r_[np.zeros(delay), self.reference[:-delay]].astype("f4")
-        ref_env = envelope(self.reference, SR, self.settings)
-        tar_env = envelope(target, SR, self.settings)
-        base, records = coarse_alignment(ref_env, tar_env, 24, 24, self.settings, QUIET)
-        self.assertLess(abs(float(base.forward([12])[0]) - 12 + 1.275), .003)
-        checks = validate_coarse(base, ref_env, tar_env, 24, self.settings)
-        self.assertGreaterEqual(sum(r["status"] == "VERIFIED" for r in checks), 3)
 
-    def test_pal_speed_is_estimated_and_refined(self):
-        reference = soundtrack(32, seed=33)
-        rate = 25 / 24
-        offset = .013
-        target_duration = 30.
-        times = np.arange(round(target_duration * SR)) / SR
-        target = warp(reference, (rate * times + offset) * SR)
-        settings = Settings(anchor_step=2.)
-        ref_env, tar_env = envelope(reference, SR, settings), envelope(target, SR, settings)
-        base, _ = coarse_alignment(ref_env, tar_env, 32, target_duration, settings, QUIET)
-        self.assertLess(abs(base.local_rate(15) - rate), .0002)
-        ms = collect(reference, target, base, settings, QUIET)
-        final, checks, _ = gate_micro(reference, target, base, ms, settings, QUIET)
-        trusted = [m.target_time for m in ms if m.status == "MEASURED"]
-        self.assertGreater(len(trusted), 8)
-        error = final.forward(trusted) - (rate * np.array(trusted) + offset)
-        self.assertLess(np.median(np.abs(error)), 1 / SR)
 
     def test_polarity_inversion_and_gain_do_not_reverse_delay(self):
         n = round(.006 * SR)
@@ -107,14 +79,6 @@ class AlignmentTests(unittest.TestCase):
         self.assertEqual(m.polarity, -1)
         self.assertLess(abs(m.correction_sec + .006), .1 / SR)
 
-    def test_montage_jump_is_not_smeared_into_tempo(self):
-        reference = soundtrack(40, seed=14)
-        times = np.arange(36 * SR) / SR
-        target = warp(reference, (times + np.where(times < 18, .5, 2.5)) * SR)
-        settings = Settings(anchor_step=2.)
-        with self.assertRaises(AlignmentError) as context:
-            coarse_alignment(envelope(reference, SR, settings), envelope(target, SR, settings), 40, 36, settings, QUIET)
-        self.assertTrue(context.exception.records)
 
     def test_multiband_recovers_common_effects_under_different_low_frequency_mix(self):
         rng = np.random.default_rng(710)

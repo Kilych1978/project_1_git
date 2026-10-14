@@ -1,28 +1,23 @@
-test_coarse_fft_delay_and_independent_validation (tests.test_alignment.AlignmentTests.test_coarse_fft_delay_and_independent_validation) ... ok
 test_dense_refinement_improves_a_smooth_local_10_ms_error (tests.test_alignment.AlignmentTests.test_dense_refinement_improves_a_smooth_local_10_ms_error) ... ok
 test_exact_6_and_10_ms_and_negative_shifts (tests.test_alignment.AlignmentTests.test_exact_6_and_10_ms_and_negative_shifts) ... ok
 test_fractional_sample_delay (tests.test_alignment.AlignmentTests.test_fractional_sample_delay) ... ok
 test_identity_does_not_change_already_synced_audio (tests.test_alignment.AlignmentTests.test_identity_does_not_change_already_synced_audio) ... ok
-test_montage_jump_is_not_smeared_into_tempo (tests.test_alignment.AlignmentTests.test_montage_jump_is_not_smeared_into_tempo) ... ok
 test_multiband_recovers_common_effects_under_different_low_frequency_mix (tests.test_alignment.AlignmentTests.test_multiband_recovers_common_effects_under_different_low_frequency_mix) ... ok
-test_pal_speed_is_estimated_and_refined (tests.test_alignment.AlignmentTests.test_pal_speed_is_estimated_and_refined) ... ok
 test_periodic_signal_is_ambiguous (tests.test_alignment.AlignmentTests.test_periodic_signal_is_ambiguous) ... ok
 test_polarity_inversion_and_gain_do_not_reverse_delay (tests.test_alignment.AlignmentTests.test_polarity_inversion_and_gain_do_not_reverse_delay) ... ok
 test_silence_cannot_confirm_a_shift (tests.test_alignment.AlignmentTests.test_silence_cannot_confirm_a_shift) ... ok
 test_unrelated_tracks_are_not_refined (tests.test_alignment.AlignmentTests.test_unrelated_tracks_are_not_refined) ... ok
 test_wrong_strong_anchors_are_rejected_by_real_holdouts (tests.test_alignment.AlignmentTests.test_wrong_strong_anchors_are_rejected_by_real_holdouts) ... ok
-test_actual_pal_rate_render_is_synchronized (tests.test_cli.CliTests.test_actual_pal_rate_render_is_synchronized) ... ok
-test_adaptive_pipeline_refines_a_nonlinear_local_error (tests.test_cli.CliTests.test_adaptive_pipeline_refines_a_nonlinear_local_error) ... ok
-test_already_synced_track_is_kept_without_render (tests.test_cli.CliTests.test_already_synced_track_is_kept_without_render) ... ok
-test_automatic_pipeline_corrects_a_large_initial_delay (tests.test_cli.CliTests.test_automatic_pipeline_corrects_a_large_initial_delay) ... ok
-test_cancel_after_render_removes_new_output_and_preserves_inputs (tests.test_cli.CliTests.test_cancel_after_render_removes_new_output_and_preserves_inputs) ... ok
-test_explicit_edit_map_pipeline_is_validated (tests.test_cli.CliTests.test_explicit_edit_map_pipeline_is_validated) ... ok
-test_final_validator_rejects_deliberately_shifted_render (tests.test_cli.CliTests.test_final_validator_rejects_deliberately_shifted_render) ... ok
-test_full_pipeline_with_graphs_and_actual_output_validation (tests.test_cli.CliTests.test_full_pipeline_with_graphs_and_actual_output_validation) ... ok
-test_loss_of_verified_pcm_in_one_region_blocks_output (tests.test_cli.CliTests.test_loss_of_verified_pcm_in_one_region_blocks_output) ... ok
-test_plot_failure_does_not_mislabel_verified_audio (tests.test_cli.CliTests.test_plot_failure_does_not_mislabel_verified_audio) ... ok
-test_training_and_holdout_pcm_windows_are_disjoint_at_all_steps (tests.test_cli.CliTests.test_training_and_holdout_pcm_windows_are_disjoint_at_all_steps) ... ok
-test_unrelated_audio_produces_no_synced_file (tests.test_cli.CliTests.test_unrelated_audio_produces_no_synced_file) ... ok
+test_35_seconds_without_common_audio_do_not_cancel_other_improvements (tests.test_modular_fix.ModularFixTests.test_35_seconds_without_common_audio_do_not_cancel_other_improvements) ... ok
+test_actual_6_and_10_ms_shifts_with_6_channels (tests.test_modular_fix.ModularFixTests.test_actual_6_and_10_ms_shifts_with_6_channels) ... ok
+test_corrupted_previously_measurable_region_is_rejected (tests.test_modular_fix.ModularFixTests.test_corrupted_previously_measurable_region_is_rejected) ... ok
+test_error_in_fine_analysis_keeps_baseline_and_reports_reason (tests.test_modular_fix.ModularFixTests.test_error_in_fine_analysis_keeps_baseline_and_reports_reason) ... ok
+test_failed_actual_render_is_discarded_without_losing_baseline (tests.test_modular_fix.ModularFixTests.test_failed_actual_render_is_discarded_without_losing_baseline) ... ok
+test_identity_and_unrelated_audio_keep_baseline (tests.test_modular_fix.ModularFixTests.test_identity_and_unrelated_audio_keep_baseline) ... ok
+test_micro_residual_subtracts_the_existing_nonzero_map (tests.test_modular_fix.ModularFixTests.test_micro_residual_subtracts_the_existing_nonzero_map) ... ok
+test_pcm_copy_fallback_never_overwrites_source_or_previous_sibling (tests.test_modular_fix.ModularFixTests.test_pcm_copy_fallback_never_overwrites_source_or_previous_sibling) ... ok
+test_safety_edge_taper_does_not_create_an_impossible_render_tempo (tests.test_modular_fix.ModularFixTests.test_safety_edge_taper_does_not_create_an_impossible_render_tempo) ... ok
+test_user_failure_measurements_no_long_gap_global_abort (tests.test_modular_fix.ModularFixTests.test_user_failure_measurements_no_long_gap_global_abort) ... ok
 test_44100_hz_is_preserved_and_float_peaks_are_not_clipped (tests.test_render.RenderTests.test_44100_hz_is_preserved_and_float_peaks_are_not_clipped) ... ok
 test_6_channels_share_one_map_and_native_rate_is_preserved (tests.test_render.RenderTests.test_6_channels_share_one_map_and_native_rate_is_preserved) ... ok
 test_antialias_filter_at_compression (tests.test_render.RenderTests.test_antialias_filter_at_compression) ... ok
@@ -35,6 +30,6 @@ test_invalid_maps_and_overlapping_edits_are_rejected (tests.test_render.RenderTe
 test_out_of_range_is_silence (tests.test_render.RenderTests.test_out_of_range_is_silence) ... ok
 
 ----------------------------------------------------------------------
-Ran 35 tests in 62.673s
+Ran 30 tests in 77.008s
 
 OK

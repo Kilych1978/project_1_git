@@ -1,0 +1,387 @@
+# ============================================================
+# UNIVERSAL AUDIO WAVEFORM SYNC — MODULAR COMPONENT
+# MODULE: config.py
+# ============================================================
+# Central configuration and filenames. Edit this file for constants, thresholds, and output naming.
+#
+# This module is part of the modular version of the project.
+# Do not run it directly; start the pipeline with start_sync.py.
+# ============================================================
+
+from __future__ import annotations
+
+
+
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+
+ANALYSIS_SAMPLE_RATE = 48000
+
+ANALYSIS_BLOCK_SEC = 0.100
+
+MAP_STEP_SEC = 1.0
+
+DECODE_STALL_TIMEOUT_SEC = 90.0
+
+DECODE_PROGRESS_INTERVAL_SEC = 0.50
+
+AUDIO_EXTENSIONS = {
+    ".wav",
+    ".wave",
+    ".flac",
+    ".mp3",
+    ".aac",
+    ".m4a",
+    ".mka",
+    ".ac3",
+    ".dts",
+    ".eac3",
+    ".ogg",
+    ".opus",
+    ".ape",
+    ".wv",
+    ".alac",
+    ".caf",
+    ".waf",
+}
+
+IGNORED_EXTENSIONS = {
+    '.zip', '.md', '.sha256', '.yml', '.yaml', '.toml',
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".bmp",
+    ".gif",
+    ".txt",
+    ".csv",
+    ".json",
+    ".log",
+    ".py",
+    ".pyc",
+    ".exe",
+    ".dll",
+    ".bat",
+    ".cmd",
+    ".ps1",
+}
+
+OUTPUT_FOLDER_SUFFIX = "_WAVEFORM_SYNC"
+
+PCM_BLOCK_SECONDS = 1.0
+
+PCM_BLOCK_SAMPLES = int(
+    ANALYSIS_SAMPLE_RATE
+    * PCM_BLOCK_SECONDS
+)
+
+ENVELOPE_WINDOW_MS = 20.0
+
+ENVELOPE_WINDOW_SAMPLES = max(
+    1,
+    int(
+        ANALYSIS_SAMPLE_RATE
+        * ENVELOPE_WINDOW_MS
+        / 1000.0
+    ),
+)
+
+ENVELOPE_HOP_MS = 10.0
+
+ENVELOPE_HOP_SAMPLES = max(
+    1,
+    int(
+        ANALYSIS_SAMPLE_RATE
+        * ENVELOPE_HOP_MS
+        / 1000.0
+    ),
+)
+
+REFERENCE_PCM_NAME = (
+    "reference_first_channel_s16le.pcm"
+)
+
+TARGET_PCM_NAME = (
+    "target_first_channel_s16le.pcm"
+)
+
+REFERENCE_WAVEFORM_NAME = (
+    "reference_waveform.npy"
+)
+
+TARGET_WAVEFORM_NAME = (
+    "target_waveform.npy"
+)
+
+REFERENCE_ENVELOPE_NAME = (
+    "reference_envelope.npy"
+)
+
+TARGET_ENVELOPE_NAME = (
+    "target_envelope.npy"
+)
+
+ANALYSIS_INFO_NAME = (
+    "analysis_info.json"
+)
+
+GLOBAL_SEARCH_RADIUS_SEC = 15.0
+
+GLOBAL_MATCH_WINDOW_SEC = 120.0
+
+GLOBAL_SEARCH_STEP_SEC = 0.25
+
+LOCAL_MATCH_WINDOW_SEC = 30.0
+
+LOCAL_ANCHOR_INTERVAL_SEC = 30.0
+
+LOCAL_SEARCH_RADIUS_SEC = 8.0
+
+LOCAL_SEARCH_STEP_SEC = 0.01
+
+MIN_LOCAL_CORRELATION = 0.15
+
+MIN_LOCAL_PEAK_MARGIN = 0.005
+
+WAVEFORM_JPEG_NAME = (
+    "01_waveform_overview.jpg"
+)
+
+ENVELOPE_JPEG_NAME = (
+    "02_envelope_overview.jpg"
+)
+
+GLOBAL_MATCH_JPEG_NAME = (
+    "03_global_alignment.jpg"
+)
+
+LOCAL_ANCHORS_JPEG_NAME = (
+    "04_local_anchor_map.jpg"
+)
+
+MAP_MIN_CORRELATION = 0.30
+
+MAP_MIN_MARGIN = 0.015
+
+MAP_MAX_LOCAL_JUMP_SEC = 1.50
+
+MAP_MAX_PREDICTION_ERROR_SEC = 1.00
+
+MAP_LOCAL_REGRESSION_POINTS = 7
+
+MAP_MEDIAN_RADIUS = 3
+
+MAP_SMOOTH_RADIUS = 3
+
+MAP_MIN_VALID_RATIO = 0.60
+
+MAP_MIN_GOOD_CORRELATION_RATIO = 0.55
+
+MIN_MAP_COVERAGE_RATIO = 0.75
+
+MAX_REASONABLE_OFFSET_SLOPE = 0.02
+
+MAX_REASONABLE_MAP_FIT_ERROR = 0.50
+
+FINAL_REPORT_NAME = (
+    "FINAL_SYNC_REPORT.txt"
+)
+
+FINAL_METRICS_NAME = (
+    "final_sync_metrics.json"
+)
+
+FINAL_MAP_JPEG_NAME = (
+    "06_FINAL_SYNC_MAP.jpg"
+)
+
+FINAL_DRIFT_JPEG_NAME = (
+    "07_DRIFT_ANALYSIS.jpg"
+)
+
+VALIDATION_WINDOW_SEC = 20.0
+
+VALIDATION_INTERVAL_SEC = 60.0
+
+MICRO_VALIDATION_ENABLED = True
+MICRO_VALIDATION_INTERVAL_SEC = 30.0
+
+VALIDATION_MAX_SHIFT_SEC = 3.0
+
+VALIDATION_SEARCH_STEP_SEC = 0.01
+
+FINE_OFFSET_REFINE_RADIUS_SEC = 0.020
+
+FINE_OFFSET_REFINE_STEP_SEC = 0.001
+
+# ------------------------------------------------------------
+# MICRO WAVEFORM REFINEMENT v6.9.1
+# ------------------------------------------------------------
+MICRO_WAVEFORM_ENABLED = True
+MICRO_FEATURE_FRAME_MS = 5.0
+MICRO_FEATURE_HOP_MS = 1.0
+MICRO_LOCAL_WINDOW_SEC = 0.75
+MICRO_SEARCH_RADIUS_SEC = 0.025
+MICRO_SEARCH_STEP_SEC = 0.001
+MICRO_MIN_BASELINE_ERROR_SEC = 0.050
+MICRO_MIN_SCORE = 0.42
+MICRO_MIN_RMS_CORRELATION = 0.38
+MICRO_MIN_EDGE_CORRELATION = 0.25
+MICRO_MIN_SCORE_GAIN = 0.005
+MICRO_MIN_CORRECTION_SEC = 0.002
+MICRO_MAX_CORRECTION_SEC = 0.020
+MICRO_MIN_ERROR_IMPROVEMENT_SEC = 0.001
+MICRO_PEAK_MARGIN = 0.010
+MICRO_MIN_REVERSE_SCORE = 0.45
+MICRO_MIN_REVERSE_RMS_CORRELATION = 0.40
+MICRO_MAX_REVERSE_DISAGREEMENT_SEC = 0.004
+MICRO_MIN_SUPPORT_POINTS = 3
+MICRO_MAX_RUN_GAP_SEC = 10.25
+MICRO_TAPER_SEC = 5.0
+MICRO_RMS_WEIGHT = 0.75
+MICRO_EDGE_WEIGHT = 0.25
+MICRO_MAX_OVERLAYS = 12
+MICRO_REPORT = "MICRO_WAVEFORM_REFINEMENT_REPORT.txt"
+MICRO_CSV = "micro_waveform_refinement.csv"
+MICRO_MAP_CSV = "micro_refined_sync_map.csv"
+MICRO_OVERVIEW_JPEG = "11_MICRO_WAVEFORM_REFINEMENT.jpg"
+MICRO_OVERLAY_DIR = "micro_overlays"
+
+VALIDATION_BEFORE_AFTER_JPEG = (
+    "08_BEFORE_AFTER_ALIGNMENT.jpg"
+)
+
+VALIDATION_ERROR_JPEG = (
+    "09_ALIGNMENT_ERROR.jpg"
+)
+
+VALIDATION_JSON = (
+    "alignment_validation.json"
+)
+
+VALIDATION_REPORT = (
+    "ALIGNMENT_VALIDATION_REPORT.txt"
+)
+
+FINAL_VALIDATION_OUTLIER_SEC = 0.25
+
+FINAL_VALIDATION_HARD_OUTLIER_SEC = 0.75
+
+FINAL_NEIGHBOR_COUNT = 3
+
+FINAL_NEIGHBOR_TOLERANCE_SEC = 0.20
+
+FINAL_VALIDATION_CSV = (
+    "final_validation_points.csv"
+)
+
+FINAL_VALIDATION_OUTLIERS_CSV = (
+    "validation_outliers.csv"
+)
+
+FINAL_ROBUST_MAP_CSV = (
+    "final_robust_sync_map.csv"
+)
+
+FINAL_ROBUST_MAP_JPEG = (
+    "10_FINAL_ROBUST_MAP.jpg"
+)
+
+FINAL_ROBUST_REPORT = (
+    "FINAL_ROBUST_MAP_REPORT.txt"
+)
+
+MANUAL_CHECK_RADIUS_SEC = 5.0
+
+OUTLIER_REPAIR_STRENGTH = 0.75
+
+APPLY_MAP_STEP_SEC = 0.25
+
+MIN_APPLY_SEGMENT_SEC = 2.0
+
+MAX_APPLY_TEMPO = 1.20
+
+MIN_APPLY_TEMPO = 0.80
+
+BIDIR_SIDE_WINDOW_SEC = 10.0
+
+BIDIR_MAX_DISAGREEMENT_SEC = 0.080
+
+BIDIR_MAX_PREDICTION_ERROR_SEC = 0.150
+
+BIDIR_MIN_CORRELATION = 0.30
+
+BIDIR_STRONG_CORRELATION = 0.45
+
+MICRO_MIN_SIDE_CORRELATION = 0.55
+MICRO_MAX_SIDE_DISAGREEMENT_SEC = 0.030
+
+RENDER_MAX_MAPPING_ERROR_SEC = 0.002
+
+RENDER_MIN_SEGMENT_SEC = 1.0
+
+RENDER_MAX_SEGMENT_SEC = 30.0
+
+RENDER_OUTPUT_SUFFIX = "_SYNCED"
+
+RENDER_PLAN_JSON = "RENDER_PLAN.json"
+
+RENDER_REPORT = "RENDER_REPORT.txt"
+
+FINAL_RENDER_VALIDATION_REPORT = "FINAL_RENDER_VALIDATION_REPORT.txt"
+
+FINAL_RENDER_VALIDATION_JSON = "FINAL_RENDER_VALIDATION.json"
+
+PRE_APPLY_MAP_CSV = (
+    "pre_apply_sync_map.csv"
+)
+
+PRE_APPLY_REPORT = (
+    "PRE_APPLY_REPORT.txt"
+)
+
+MANUAL_OUTLIER_REPORT = (
+    "MANUAL_AUDACITY_CHECK.txt"
+)
+
+APPLY_PLAN_JSON = (
+    "apply_plan.json"
+)
+
+APPLY_PLAN_JPEG = (
+    "12_APPLY_PLAN.jpg"
+)
+
+CONF_STRONG_CORR = 0.55
+
+CONF_EXCELLENT_CORR = 0.70
+
+CONF_STRONG_MARGIN = 0.025
+
+CONF_WEAK_CORR = 0.40
+
+CONF_TRACKING_TOLERANCE_SEC = 0.20
+
+CONF_MAX_ANCHOR_JUMP_SEC = 0.35
+
+CONF_MAX_TREND_ERROR_SEC = 0.30
+
+CONF_CONTEXT_RADIUS_POINTS = 4
+
+CONFIDENCE_MAP_CSV = (
+    "confidence_aware_map.csv"
+)
+
+CONFIDENCE_MAP_JPEG = (
+    "13_CONFIDENCE_AWARE_MAP.jpg"
+)
+
+CONFIDENCE_MAP_REPORT = (
+    "CONFIDENCE_AWARE_REPORT.txt"
+)
+
+CONFIDENCE_POINTS_CSV = (
+    "confidence_classification.csv"
+)
+
+RUSSIAN_REPORT_SUFFIX = "_RU.txt"

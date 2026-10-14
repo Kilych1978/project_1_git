@@ -1,33 +1,37 @@
-#!/usr/bin/env python3
-"""Single entry point for CMD and Python. No processing on import."""
+from __future__ import annotations
+
 import sys
-import os
-import tempfile
-from pathlib import Path
-
-
-def main():
-    if sys.version_info < (3, 11):
-        print("Требуется Python 3.11 или новее. Рекомендуется Python 3.12.", file=sys.stderr)
-        return 1
-    for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8", errors="replace")
-    os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "wavesync-matplotlib"))
-    os.environ.setdefault("XDG_CACHE_HOME", str(Path(tempfile.gettempdir()) / "wavesync-cache"))
-    try:
-        from wavesync.cli import main as run
-        return run()
-    except ModuleNotFoundError as exc:
-        print(f"Не установлен пакет {exc.name}. Запустите SETUP_WINDOWS.cmd или установите requirements.txt.", file=sys.stderr)
-        return 1
-    except KeyboardInterrupt:
-        print("\nОстановлено пользователем.")
-        return 130
-    except Exception as exc:
-        print("\nОшибка: " + str(exc), file=sys.stderr)
-        return 1
+from launcher import main
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        if '--check' in sys.argv:
+            from pcm_core.audio import find_tools
+            import numpy, scipy, matplotlib
+            print('Python:', sys.version.split()[0])
+            print('NumPy:', numpy.__version__, 'SciPy:', scipy.__version__, 'Matplotlib:', matplotlib.__version__)
+            print('FFmpeg / FFprobe:', find_tools())
+        elif len(sys.argv) == 1:
+            from pcm_core.audio import find_tools
+            find_tools()
+            main()
+        else:
+            raise ValueError('Для обычного запуска: start_sync.py. Проверка установки: start_sync.py --check.')
+    except KeyboardInterrupt:
+        print()
+        print()
+        print("=" * 78)
+        print("ПРОГРАММА ОСТАНОВЛЕНА ПОЛЬЗОВАТЕЛЕМ")
+        print("=" * 78)
+        sys.exit(1)
+    except Exception as exc:
+        print()
+        print()
+        print("=" * 78)
+        print("CRITICAL ERROR")
+        print("=" * 78)
+        print()
+        print(str(exc))
+        print()
+        sys.exit(1)

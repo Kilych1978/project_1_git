@@ -2,11 +2,11 @@ import tempfile
 import unittest
 from pathlib import Path
 import numpy as np
-from wavesync.audio import find_tools, probe
-from wavesync.config import Settings
-from wavesync.dsp import sinc_sample
-from wavesync.model import Piece, TimeMap
-from wavesync.render import render
+from pcm_core.audio import find_tools, probe
+from pcm_core.config import Settings
+from pcm_core.dsp import sinc_sample
+from pcm_core.model import Piece, TimeMap
+from pcm_core.render import render
 from .helpers import SR, read_audio, soundtrack, write_audio
 
 
@@ -74,7 +74,7 @@ class RenderTests(unittest.TestCase):
             self.assertAlmostEqual(float(actual[round(1.5*SR)+100:round(2.5*SR)-100].mean()), .3, places=5)
 
     def test_first_channel_extraction_does_not_downmix_center_dialogue(self):
-        from wavesync.audio import decode
+        from pcm_core.audio import decode
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             rng = np.random.default_rng(17)
