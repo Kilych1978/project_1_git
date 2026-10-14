@@ -34,6 +34,19 @@ def peak(curve, exclusion=1, absolute=False):
     y0, y1, y2 = scores[index - 1:index + 2]
     denominator = y0 - 2 * y1 + y2
     fraction = float(np.clip(0.5 * (y0 - y2) / denominator, -.5, .5)) if denominator < -1e-12 else 0.
+    # Three-sample parabolic interpolation is biased on an audio correlation
+    # peak. Interpolate the signed, band-limited correlation near its maximum
+    # before fitting the much smaller remaining fractional step.
+    if 16 <= index < len(curve) - 16:
+        positions = index + np.linspace(-.6, .6, 33)
+        polarity = 1 if curve[index] >= 0 else -1
+        interpolated = sinc_sample(np.asarray(curve) * polarity, positions)
+        best = int(np.argmax(interpolated))
+        if 0 < best < len(positions) - 1:
+            z0, z1, z2 = interpolated[best - 1:best + 2].astype(np.float64)
+            denom = z0 - 2 * z1 + z2
+            small = np.clip(.5 * (z0 - z2) / denom, -.5, .5) if denom < -1e-12 else 0.
+            fraction = float(positions[best] - index + small * (positions[1] - positions[0]))
     mask = np.abs(np.arange(len(scores)) - index) > exclusion
     second = float(np.max(scores[mask])) if mask.any() else 0.
     return {"index": index, "fraction": fraction, "score": float(y1),

@@ -10,13 +10,34 @@ test_unrelated_tracks_are_not_refined (tests.test_alignment.AlignmentTests.test_
 test_wrong_strong_anchors_are_rejected_by_real_holdouts (tests.test_alignment.AlignmentTests.test_wrong_strong_anchors_are_rejected_by_real_holdouts) ... ok
 test_35_seconds_without_common_audio_do_not_cancel_other_improvements (tests.test_modular_fix.ModularFixTests.test_35_seconds_without_common_audio_do_not_cancel_other_improvements) ... ok
 test_actual_6_and_10_ms_shifts_with_6_channels (tests.test_modular_fix.ModularFixTests.test_actual_6_and_10_ms_shifts_with_6_channels) ... ok
+test_consensus_undoes_known_candidate_curve_before_clock_check (tests.test_modular_fix.ModularFixTests.test_consensus_undoes_known_candidate_curve_before_clock_check) ... ok
 test_corrupted_previously_measurable_region_is_rejected (tests.test_modular_fix.ModularFixTests.test_corrupted_previously_measurable_region_is_rejected) ... ok
+test_decoded_failure_removes_only_its_component_and_rerenders_baseline (tests.test_modular_fix.ModularFixTests.test_decoded_failure_removes_only_its_component_and_rerenders_baseline) ... ok
 test_error_in_fine_analysis_keeps_baseline_and_reports_reason (tests.test_modular_fix.ModularFixTests.test_error_in_fine_analysis_keeps_baseline_and_reports_reason) ... ok
 test_failed_actual_render_is_discarded_without_losing_baseline (tests.test_modular_fix.ModularFixTests.test_failed_actual_render_is_discarded_without_losing_baseline) ... ok
+test_failing_finer_grid_preserves_previously_verified_candidate (tests.test_modular_fix.ModularFixTests.test_failing_finer_grid_preserves_previously_verified_candidate) ... ok
 test_identity_and_unrelated_audio_keep_baseline (tests.test_modular_fix.ModularFixTests.test_identity_and_unrelated_audio_keep_baseline) ... ok
+test_micro_only_original_menus_create_verified_multichannel_output (tests.test_modular_fix.ModularFixTests.test_micro_only_original_menus_create_verified_multichannel_output) ... /workspace/project_1_git/analyzer.py:1124: ResourceWarning: unclosed file <_io.FileIO name=3 mode='rb' closefd=True>
+  decode_first_channel_stream(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/workspace/project_1_git/analyzer.py:1124: ResourceWarning: unclosed file <_io.FileIO name=5 mode='rb' closefd=True>
+  decode_first_channel_stream(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/workspace/project_1_git/analyzer.py:1149: ResourceWarning: unclosed file <_io.FileIO name=3 mode='rb' closefd=True>
+  decode_first_channel_stream(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/workspace/project_1_git/analyzer.py:1149: ResourceWarning: unclosed file <_io.FileIO name=5 mode='rb' closefd=True>
+  decode_first_channel_stream(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+mkdir -p failed for path /home/agent/.config/matplotlib: [Errno 30] Read-only file system: '/home/agent/.config/matplotlib'
+Matplotlib created a temporary cache directory at /tmp/matplotlib-jjj4b3yf because there was an issue with the default path (/home/agent/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+Fontconfig error: No writable cache directories
+ok
 test_micro_residual_subtracts_the_existing_nonzero_map (tests.test_modular_fix.ModularFixTests.test_micro_residual_subtracts_the_existing_nonzero_map) ... ok
+test_one_invalid_local_transition_keeps_other_movie_corrections (tests.test_modular_fix.ModularFixTests.test_one_invalid_local_transition_keeps_other_movie_corrections) ... ok
 test_pcm_copy_fallback_never_overwrites_source_or_previous_sibling (tests.test_modular_fix.ModularFixTests.test_pcm_copy_fallback_never_overwrites_source_or_previous_sibling) ... ok
 test_safety_edge_taper_does_not_create_an_impossible_render_tempo (tests.test_modular_fix.ModularFixTests.test_safety_edge_taper_does_not_create_an_impossible_render_tempo) ... ok
+test_splice_center_uses_reciprocal_pcm_instead_of_false_linear_clock (tests.test_modular_fix.ModularFixTests.test_splice_center_uses_reciprocal_pcm_instead_of_false_linear_clock) ... ok
 test_user_failure_measurements_no_long_gap_global_abort (tests.test_modular_fix.ModularFixTests.test_user_failure_measurements_no_long_gap_global_abort) ... ok
 test_44100_hz_is_preserved_and_float_peaks_are_not_clipped (tests.test_render.RenderTests.test_44100_hz_is_preserved_and_float_peaks_are_not_clipped) ... ok
 test_6_channels_share_one_map_and_native_rate_is_preserved (tests.test_render.RenderTests.test_6_channels_share_one_map_and_native_rate_is_preserved) ... ok
@@ -30,6 +51,6 @@ test_invalid_maps_and_overlapping_edits_are_rejected (tests.test_render.RenderTe
 test_out_of_range_is_silence (tests.test_render.RenderTests.test_out_of_range_is_silence) ... ok
 
 ----------------------------------------------------------------------
-Ran 30 tests in 77.008s
+Ran 36 tests in 186.589s
 
 OK

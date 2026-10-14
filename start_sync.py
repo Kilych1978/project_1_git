@@ -12,12 +12,17 @@ if __name__ == "__main__":
             print('Python:', sys.version.split()[0])
             print('NumPy:', numpy.__version__, 'SciPy:', scipy.__version__, 'Matplotlib:', matplotlib.__version__)
             print('FFmpeg / FFprobe:', find_tools())
+        elif sys.argv[1:] == ['--micro-only']:
+            from pcm_core.audio import find_tools
+            from micro_launcher import main as micro_main
+            find_tools()
+            micro_main()
         elif len(sys.argv) == 1:
             from pcm_core.audio import find_tools
             find_tools()
             main()
         else:
-            raise ValueError('Для обычного запуска: start_sync.py. Проверка установки: start_sync.py --check.')
+            raise ValueError('Запуск: start_sync.py; микроуточнение: --micro-only; проверка установки: --check.')
     except KeyboardInterrupt:
         print()
         print()

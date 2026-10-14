@@ -15,7 +15,7 @@ class Settings:
     sinc_radius: int = 16
 
     def __post_init__(self):
-        if not 0.5 <= self.anchor_step <= 30:
-            raise ValueError("Шаг анализа должен быть от 0,5 до 30 секунд.")
+        if not 0.125 <= self.anchor_step <= 30:
+            raise ValueError("Шаг анализа должен быть от 0,125 до 30 секунд.")
         if self.analysis_rate < 32000 or not .001 <= self.micro_radius <= .1:
             raise ValueError('Некорректные параметры PCM-микропоиска.')

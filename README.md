@@ -1,4 +1,4 @@
-# Universal Audio Waveform Sync — Modular 6.9.2
+# Universal Audio Waveform Sync — Modular 6.9.3
 
 Восстановлены интерфейс, меню, 12 этапов, проценты выполнения и графики
 исходной сборки **6.9.1**. Основной поиск и построение карты времени используют
@@ -8,15 +8,23 @@
 **Сборка 8.0 заменена этой версией.** Её широкий поиск и остановка всего
 процесса из-за длинного неподтверждённого участка здесь не используются.
 
-[Скачать ZIP 6.9.2](https://raw.githubusercontent.com/Kilych1978/project_1_git/refs/heads/main/releases/Universal_Audio_Waveform_Sync_modular_v6.9.2.zip)
+[Скачать ZIP 6.9.3](https://raw.githubusercontent.com/Kilych1978/project_1_git/refs/heads/main/releases/Universal_Audio_Waveform_Sync_modular_v6.9.3.zip)
 
 [Инструкция для Windows 11](README_RU.md) ·
 [Что исправлено](docs/FIX_20261014_RU.md) ·
 [Проверки](docs/TEST_RESULTS_RU.md)
 
-Для запуска: `SETUP_WINDOWS.cmd` один раз, затем `START_WINDOWS.cmd`.
-Аудиофайлы положите рядом со `start_sync.py`. Отдельный режим для дорожки,
-уже обработанной версией 3.3, выбирать не требуется.
+Для установки: `SETUP_WINDOWS.cmd` один раз. Аудиофайлы положите рядом
+со `start_sync.py`.
+
+- Дорожка **уже обработана v3.3**, остались миллисекунды: `MICRO_REFINE.cmd`.
+  Он уточняет выбранный исходник напрямую, без повторной крупной синхронизации.
+- Нужна синхронизация с самого начала: `START_WINDOWS.cmd`, прежние 12 этапов.
+
+Исправлен отказ 6.9.2, при котором неудачная мелкая сетка стирала удачные
+предыдущие поправки. Локальные ошибки карты изолируются; готовый WAV
+проверяется повторным декодированием. Результаты на восьми присланных
+звуковых фрагментах приведены в [отчёте проверок](docs/TEST_RESULTS_RU.md).
 
 Проверка установки: `python start_sync.py --check`.
 
@@ -26,6 +34,7 @@
 python self_test_v6_8.py
 python self_test_v6_9.py
 python -m unittest discover -s tests -t . -v
+python -m tests.full_modular_smoke /tmp/wavesync-smoke .275
 ```
 
 Измерения подтверждают результат в проверенных окнах с общим звуком.

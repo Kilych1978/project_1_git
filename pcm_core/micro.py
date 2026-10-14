@@ -24,6 +24,26 @@ class Measurement:
         return asdict(self)
 
 
+class _InverseMap:
+    """Use the exact inverse of a candidate for reciprocal PCM confirmation."""
+    def __init__(self, mapping):
+        self.mapping = mapping
+
+    def forward(self, times):
+        return self.mapping.inverse(times)
+
+    def inverse(self, times):
+        return self.mapping.forward(times)
+
+    def inverse_rate(self, times):
+        values = np.asarray(times, dtype=float)
+        rates = np.full(values.shape, np.nan)
+        for p in self.mapping.pieces:
+            valid = (values >= p.target[0]) & (values <= p.target[-1])
+            rates[valid] = p.rate_at(values[valid])
+        return rates
+
+
 def measure_window(reference, target, mapping, target_time, settings, radius=None, window_sec=None):
     sr = settings.analysis_rate
     center = float(mapping.forward([target_time])[0])
@@ -103,14 +123,18 @@ def measure(reference, target, mapping, target_time, settings):
         return result
     # Fit residual slope, rather than falsely treating rate drift as disagreement.
     xs = np.array([x for x, _ in observations])
-    values = np.array([m["correction_sec"] for _, m in observations])
+    # Consensus is about the source clock, not about the residual of a
+    # deliberately curved candidate. Subtracting a curved time map makes a
+    # perfectly consistent source residual look curved/inconsistent. Undo that
+    # known map before checking the three independent observations.
+    values = np.array([m['correction_sec'] + float(mapping.forward([target_time + dt])[0])
+                       - (target_time + dt) for dt, m in observations])
     slope, intercept = np.polyfit(xs, values, 1)
     scatter = np.max(np.abs(values - (intercept + slope * xs)))
     # Neighbor agreement is a gate, not an averaging filter. Averaging a
     # curved residual erases the exact center measurement by tens of us.
     central = next((m for dt, m in observations if dt == 0.), None)
-    if central is not None:
-        intercept = central["correction_sec"]
+    correction = central['correction_sec'] if central is not None else intercept + target_time - center
     polarities = {m["polarity"] for _, m in observations}
     result.score = float(np.median([m["score"] for _, m in observations]))
     result.margin = float(np.min([m["margin"] for _, m in observations]))
@@ -121,15 +145,34 @@ def measure(reference, target, mapping, target_time, settings):
         result.method += "-short"
     if (scatter > settings.raw_consensus or abs(slope) > .003 or len(polarities) != 1):
         result.status = "INCONSISTENT"
+        # At an existing splice, neighbouring windows can legitimately have
+        # different delays. Accept its center only with strong unique PCM and
+        # an independent reverse search, not by relaxing the consensus gate.
+        if (central is not None and central['score'] >= .85 and central['margin'] >= .12
+                and len(polarities) == 1):
+            event = center + central['correction_sec']
+            inverse = _InverseMap(mapping)
+            predicted = float(inverse.forward([event])[0])
+            reverse = measure_window(target, reference, inverse, event, settings)
+            if (np.isfinite(predicted) and reverse and not reverse['near_edge']
+                    and reverse['score'] >= .85 and reverse['margin'] >= .12
+                    and reverse['polarity'] == central['polarity']
+                    and abs(predicted + reverse['correction_sec'] - target_time) <= 2 / settings.analysis_rate):
+                result.status = 'MEASURED'
+                result.correction_sec = float(central['correction_sec'])
+                result.method += '-boundary'
         return result
-    result.correction_sec = float(intercept)
+    result.correction_sec = float(correction)
     result.status = "MEASURED"
     return result
 
 
 def grid(mapping, settings, phase=0.):
     centers = []
-    margin = 1.0
+    # Keep edge probes and training windows disjoint, without discarding a
+    # whole second of usable PCM at each edge of a short diagnostic fragment.
+    margin = (.25 + min(.45, settings.anchor_step / 6)
+              + min(settings.micro_window, settings.anchor_step / 8))
     for p in mapping.pieces:
         # A large negative offset can place initial target anchors before the
         # start of reference audio. Start in the COMMON timeline, not at t=0.
@@ -144,9 +187,9 @@ def grid(mapping, settings, phase=0.):
     return centers
 
 
-def collect(reference, target, mapping, settings, log=print, progress=None):
+def collect(reference, target, mapping, settings, log=print, progress=None, centers=None):
     records = []
-    centers = grid(mapping, settings)
+    centers = grid(mapping, settings) if centers is None else centers
     for i, t in enumerate(centers):
         records.append(measure(reference, target, mapping, t, settings))
         if progress:
@@ -156,7 +199,7 @@ def collect(reference, target, mapping, settings, log=print, progress=None):
     return records
 
 
-def refined_map(base, measurements, settings, enabled_times=None):
+def refined_map(base, measurements, settings, enabled_times=None, audit=None):
     """Only consecutive supported anchors form a region; rejected points are barriers.
 
     Anchor times are inserted exactly (v7's 1-second map grid could miss an anchor).
@@ -175,6 +218,16 @@ def refined_map(base, measurements, settings, enabled_times=None):
                 vals = np.array([m.correction_sec for m in run])
                 if np.max(np.abs(vals)) <= settings.min_improvement:
                     return
+                # A stable residual clock rate is estimated from all training
+                # anchors. Do not bend the time map to sample/codec noise.
+                fitted = False
+                if len(run) >= 3:
+                    weights = np.array([m.score for m in run]) ** 2
+                    slope, intercept = np.polyfit(times - times[0], vals, 1, w=weights)
+                    fitted_values = slope * (times - times[0]) + intercept
+                    if np.max(np.abs(vals - fitted_values)) <= .25 / settings.analysis_rate:
+                        vals = fitted_values
+                        fitted = True
                 left = max(piece.target[0], times[0] - settings.anchor_step / 2)
                 right = min(piece.target[-1], times[-1] + settings.anchor_step / 2)
                 left_value = right_value = 0.
@@ -185,11 +238,49 @@ def refined_map(base, measurements, settings, enabled_times=None):
                     if np.max(np.abs(vals - (slope * times + intercept))) < settings.raw_consensus:
                         left, right = piece.target[0], piece.target[-1]
                         left_value, right_value = slope * left + intercept, slope * right + intercept
-                nodes.extend([(left, left_value), *zip(times.tolist(), vals.tolist()), (right, right_value)])
+                # Validate each supported run independently. A bad boundary
+                # must never invalidate unrelated improvements in a movie.
+                # A smaller, independently checked correction is preferable
+                # to returning the entire fine map to zero.
+                accepted_gain = None
+                cap = np.full(vals.shape, np.inf)
+                if left_value == 0.:
+                    cap = np.minimum(cap, (times - left) * settings.max_rate_change * .6)
+                if right_value == 0.:
+                    cap = np.minimum(cap, (right - times) * settings.max_rate_change * .6)
+                shaped_values = np.clip(vals, -cap, cap)
+                options = [(1., vals, False), (1., shaped_values, True)]
+                options += [(gain, vals * gain, False) for gain in (.5, .25, .125, .0625)]
+                edge_limited = False
+                for gain, trial_values, shaped in options:
+                    curve = {'target': [left, *times.tolist(), right],
+                             'delta': [left_value * gain, *trial_values.tolist(), right_value * gain]}
+                    local_times = np.unique(np.r_[piece.target, curve['target']])
+                    interpolation = PchipInterpolator(curve['target'], curve['delta'], extrapolate=False)
+                    local_delta = np.nan_to_num(interpolation(local_times), nan=0.)
+                    try:
+                        local_piece = Piece(local_times, piece.reference_at(local_times) + local_delta,
+                                            [*piece.corrections, curve])
+                        TimeMap([local_piece]).validate(settings.max_rate_change)
+                    except ValueError:
+                        continue
+                    accepted_gain = gain
+                    edge_limited = shaped
+                    nodes.extend(zip(curve['target'], curve['delta']))
+                    break
+                if audit is not None and (accepted_gain != 1. or fitted or edge_limited):
+                    audit.append({'status': 'LOCAL_CURVE', 'start': float(times[0]),
+                                  'end': float(times[-1]), 'gain': accepted_gain,
+                                  'affine_fit': fitted, 'edge_limited': edge_limited, 'anchors': len(run)})
         for m in rows:
             active = (m.status == "MEASURED" and m.correction_sec is not None
                       and (enabled_times is None or m.target_time in enabled_times))
-            if active and (not run or m.target_time - run[-1].target_time <= settings.anchor_step * 1.01):
+            gap_ok = not run or m.target_time - run[-1].target_time <= settings.anchor_step * 1.01
+            # Separate abrupt changes rather than pretending they are a
+            # continuous clock-rate correction. Each side keeps its evidence.
+            slope_ok = not active or not run or abs(m.correction_sec - run[-1].correction_sec) <= (
+                .75 * settings.max_rate_change * (m.target_time - run[-1].target_time))
+            if active and gap_ok and slope_ok:
                 run.append(m)
             else:
                 commit()
@@ -206,5 +297,33 @@ def refined_map(base, measurements, settings, enabled_times=None):
         interpolator = PchipInterpolator(xs, ys, extrapolate=False)
         corrections = np.nan_to_num(interpolator(nt), nan=0.)
         curves = [*piece.corrections, {"target": xs.tolist(), "delta": ys.tolist()}]
-        output.append(Piece(nt, piece.reference_at(nt) + corrections, curves))
+        new_piece = Piece(nt, piece.reference_at(nt) + corrections, curves)
+        # The combined interpolator can change derivatives at neighbouring
+        # zero boundaries. If necessary, damp just those knots, not the map.
+        for _ in range(12):
+            rates = new_piece.rate_extrema()
+            if np.max(np.abs(rates - 1)) <= settings.max_rate_change + 1e-10:
+                break
+            lo = np.nextafter(new_piece.target[:-1], new_piece.target[1:])
+            hi = np.nextafter(new_piece.target[1:], new_piece.target[:-1])
+            d0 = new_piece.correction_at(lo, derivative=2)
+            d1 = new_piece.correction_at(hi, derivative=2)
+            crossing = (d0 * d1 < 0) & (np.abs(d1 - d0) > 1e-15)
+            roots = lo[crossing] - d0[crossing] * (hi[crossing] - lo[crossing]) / (d1[crossing] - d0[crossing])
+            probes = np.r_[lo, hi, roots]
+            bad = probes[np.abs(new_piece.rate_at(probes) - 1) > settings.max_rate_change]
+            changed = set()
+            for t in bad:
+                i = np.clip(np.searchsorted(xs, t), 1, len(xs) - 1)
+                changed.update([i - 1, i])
+            if not changed:
+                break
+            ys[list(changed)] *= .5
+            interpolation = PchipInterpolator(xs, ys, extrapolate=False)
+            corrections = np.nan_to_num(interpolation(nt), nan=0.)
+            curves = [*piece.corrections, {'target': xs.tolist(), 'delta': ys.tolist()}]
+            new_piece = Piece(nt, piece.reference_at(nt) + corrections, curves)
+            if audit is not None:
+                audit.append({'status': 'LOCAL_RATE_LIMIT', 'knots': [float(xs[i]) for i in sorted(changed)]})
+        output.append(new_piece)
     return TimeMap(output, list(base.notes)).validate(settings.max_rate_change)

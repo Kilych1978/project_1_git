@@ -12,8 +12,10 @@ import numpy as np
 
 from common import Progress, SelectedTracks
 from pcm_core.config import Settings
-from pcm_core.guard import render_verdict, verify_render
+from pcm_core.guard import render_verdict, verify_render, cancel_unsafe_components
 from pcm_core.model import TimeMap
+from pcm_core.model import Piece
+from pcm_core.micro import Measurement, measure, refined_map
 from pcm_refiner import refine_rendered_audio
 from scanner import probe_audio_file
 from renderer import copy_target_without_reencode
@@ -26,6 +28,115 @@ from .helpers import SR, soundtrack, write_audio
 
 
 class ModularFixTests(unittest.TestCase):
+    def test_decoded_failure_removes_only_its_component_and_rerenders_baseline(self):
+        x = soundtrack(14., 921)
+        n = round(.006 * SR)
+        y = np.r_[np.zeros(n), x[:-n]]
+        knots = np.array([0., 1., 5., 6., 8., 9., 13., 14.])
+        delta = np.array([0., -.006, -.006, 0., 0., -.006, -.006, 0.])
+        mapping = TimeMap([Piece(knots, knots + delta,
+                                [{'target': knots.tolist(), 'delta': delta.tolist()}])])
+        reduced, removed = cancel_unsafe_components(TimeMap.affine(14.), mapping, [10.])
+        np.testing.assert_array_equal(reduced.forward(np.linspace(0., 6., 101)),
+                                      mapping.forward(np.linspace(0., 6., 101)))
+        np.testing.assert_allclose(reduced.forward([9., 10., 13.]), [8.994, 10., 12.994], atol=1e-12)
+        self.assertEqual(len(removed), 1)
+        checks = [{'target_time': t, 'status': 'IMPROVED', 'change_sec': -.006,
+                   'before_residual_sec': -.006, 'after_residual_sec': 0.,
+                   'before_score': .99, 'after_score': .99} for t in (2., 4., 10., 12.)]
+        calls = []
+        def verify(*args, **kwargs):
+            rows = verify_render(*args, **kwargs)
+            calls.append(1)
+            if len(calls) == 1:
+                min(rows, key=lambda r: abs(r['target_time'] - 10.))['status'] = 'REGRESSION'
+            return rows
+        with tempfile.TemporaryDirectory() as td, \
+             patch('pcm_refiner.gate_micro', return_value=(mapping, checks, [])), \
+             patch('pcm_refiner.verify_render', side_effect=verify):
+            final, result, report, _ = self.run_fine(Path(td), x, y, settings=Settings(anchor_step=1., min_improvement=1/SR))
+            self.assertEqual(report['status'], 'PCM_REFINED', report['reason'])
+            self.assertGreaterEqual(len(calls), 2)
+            self.assertTrue(any(r['status'] == 'ACTUAL_LOCAL_CANCEL' for r in report['audit']))
+            self.assertAlmostEqual(np.interp(3., final['target_time'], final['offset']), -.006, delta=1/SR)
+            self.assertAlmostEqual(np.interp(10., final['target_time'], final['offset']), 0., delta=1e-10)
+            self.assertEqual(probe_audio_file(result['output_path']).codec_name, 'pcm_f32le')
+
+    def test_one_invalid_local_transition_keeps_other_movie_corrections(self):
+        times = np.arange(1., 100.)
+        rows = [Measurement(float(t), float(t), float(-.001 * ((t % 30) - 15)),
+                            .99, .8, .00001, 3, 1, 'MEASURED', 'raw') for t in times]
+        mapping = refined_map(TimeMap.affine(100.), rows,
+                              Settings(anchor_step=1., max_rate_change=.02, min_improvement=1/SR))
+        values = mapping.forward(times) - times
+        self.assertGreater(np.count_nonzero(np.abs(values) > 1/SR), 80)
+        self.assertLessEqual(max(np.max(np.abs(p.rate_extrema() - 1)) for p in mapping.pieces), .02 + 1e-10)
+
+    def test_consensus_undoes_known_candidate_curve_before_clock_check(self):
+        x = soundtrack(12.)
+        n = round(.006 * SR)
+        y = np.r_[np.zeros(n), x[:-n]]
+        knots = np.array([0., 2., 6., 12.])
+        delta = np.array([0., -.006, -.006, 0.])
+        candidate = TimeMap([Piece(knots, knots + delta,
+                                  [{'target': knots.tolist(), 'delta': delta.tolist()}])])
+        row = measure(x, y, candidate, 1., Settings(anchor_step=5.))
+        self.assertEqual(row.status, 'MEASURED')
+        self.assertLess(abs(float(candidate.forward([1.])[0]) - 1. + row.correction_sec + .006), 1/SR)
+
+    def test_splice_center_uses_reciprocal_pcm_instead_of_false_linear_clock(self):
+        x = soundtrack(12., 746)
+        positions = np.arange(len(x))
+        times = positions / SR
+        lag = np.where(np.abs(times - 5.5) < .05, .004, .006)
+        y = x[np.clip(positions - np.rint(lag * SR).astype(int), 0, len(x) - 1)]
+        row = measure(x, y, TimeMap.affine(12.), 5.5, Settings(anchor_step=.5))
+        self.assertEqual(row.status, 'MEASURED')
+        self.assertIn('boundary', row.method)
+        self.assertAlmostEqual(row.correction_sec, -.004, delta=1/SR)
+
+    def test_failing_finer_grid_preserves_previously_verified_candidate(self):
+        x = soundtrack(14.)
+        n = round(.006 * SR)
+        y = np.r_[np.zeros(n), x[:-n]]
+        calls = []
+        def gate(reference, target, base, measurements, settings, **kwargs):
+            calls.append(settings.anchor_step)
+            checks = [{'target_time': t, 'status': 'IMPROVED', 'change_sec': -.006,
+                       'before_residual_sec': -.006, 'after_residual_sec': .0001,
+                       'before_score': .99, 'after_score': .99} for t in (1., 6., 11.)]
+            if len(calls) == 1:
+                return TimeMap.affine(14., offset=-.006), checks, checks
+            return base, checks, [{'status': 'INVALID_MAP'}]
+        with tempfile.TemporaryDirectory() as td, patch('pcm_refiner.gate_micro', side_effect=gate):
+            _, _, report, _ = self.run_fine(Path(td), x, y, settings=Settings(anchor_step=5., min_improvement=1/SR))
+            self.assertGreater(len(calls), 1)
+            self.assertEqual(report['status'], 'PCM_REFINED', report['reason'])
+            self.assertEqual(report['selected_step_sec'], 5.)
+
+    def test_micro_only_original_menus_create_verified_multichannel_output(self):
+        import scanner
+        from micro_launcher import main
+        with tempfile.TemporaryDirectory() as td:
+            directory = Path(td)
+            x = soundtrack(14.)
+            n = round(.010 * SR)
+            y = np.r_[np.zeros(n), x[:-n]]
+            rp, tp = directory/'01_reference.wav', directory/'02_target.wav'
+            write_audio(rp, x)
+            write_audio(tp, np.stack([y, y*.5, soundtrack(14., 772), y*.2, y*.7, y*.3], axis=1), layout='5.1')
+            before = hashlib.sha256(tp.read_bytes()).hexdigest()
+            output = io.StringIO()
+            with patch.object(scanner, 'BASE_DIR', directory), patch('builtins.input', side_effect=['1','1','y']), contextlib.redirect_stdout(output):
+                main()
+            self.assertIn('ШАГ 4/4', output.getvalue())
+            self.assertIn('[100.00%]', output.getvalue())
+            report_path = next(directory.glob('*_WAVEFORM_SYNC/FINAL_SYNC_MAP.json'))
+            report = json.loads(report_path.read_text())
+            self.assertEqual(report['pcm_micro_refinement']['status'], 'PCM_REFINED')
+            self.assertEqual(probe_audio_file(Path(report['output_file'])).channels, 6)
+            self.assertEqual(hashlib.sha256(tp.read_bytes()).hexdigest(), before)
+
     def test_safety_edge_taper_does_not_create_an_impossible_render_tempo(self):
         t = np.arange(0., 241., 1.)
         checks = np.arange(18., 219., 10.)

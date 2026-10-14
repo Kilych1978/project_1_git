@@ -3,7 +3,22 @@ PASS: test_micro_search_recovers_known_shift
 ==============================================================================
 МИКРО-УТОЧНЕНИЕ ФОРМЫ ВОЛНЫ
 ==============================================================================
-[  8.33%] Проверка микросовмещения | t=00:00:01[ 16.67%] Проверка микросовмещения | t=00:00:01[ 25.00%] Проверка микросовмещения | t=00:00:02[ 33.33%] Проверка микросовмещения | t=00:00:02[ 41.67%] Проверка микросовмещения | t=00:00:03[ 50.00%] Проверка микросовмещения | t=00:00:03[ 58.33%] Проверка микросовмещения | t=00:00:04[ 66.67%] Проверка микросовмещения | t=00:00:04[ 75.00%] Проверка микросовмещения | t=00:00:05[ 83.33%] Проверка микросовмещения | t=00:00:05[ 91.67%] Проверка микросовмещения | t=00:00:06[100.00%] Проверка микросовмещения | t=00:00:06
+
+[  8.33%] Проверка микросовмещения | t=00:00:01
+[ 16.67%] Проверка микросовмещения | t=00:00:01
+[ 25.00%] Проверка микросовмещения | t=00:00:02
+[ 33.33%] Проверка микросовмещения | t=00:00:02
+[ 41.67%] Проверка микросовмещения | t=00:00:03
+[ 50.00%] Проверка микросовмещения | t=00:00:03
+[ 58.33%] Проверка микросовмещения | t=00:00:04
+[ 66.67%] Проверка микросовмещения | t=00:00:04
+[ 75.00%] Проверка микросовмещения | t=00:00:05
+[ 83.33%] Проверка микросовмещения | t=00:00:05
+[ 91.67%] Проверка микросовмещения | t=00:00:06
+[100.00%] Проверка микросовмещения | t=00:00:06mkdir -p failed for path /home/agent/.config/matplotlib: [Errno 30] Read-only file system: '/home/agent/.config/matplotlib'
+Matplotlib created a temporary cache directory at /tmp/matplotlib-frawkgpl because there was an issue with the default path (/home/agent/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+Fontconfig error: No writable cache directories
+
 PASS: test_micro_refinement_keeps_true_local_shift
 PASS: test_micro_candidate_must_reduce_measured_error
 PASS: test_micro_score_gain_cannot_override_timing_worsening

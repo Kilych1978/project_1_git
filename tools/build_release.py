@@ -5,7 +5,7 @@ from pathlib import Path
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-NAME = 'Universal_Audio_Waveform_Sync_modular_v6.9.2'
+NAME = 'Universal_Audio_Waveform_Sync_modular_v6.9.3'
 
 
 def main():

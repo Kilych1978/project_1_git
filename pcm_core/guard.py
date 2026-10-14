@@ -24,8 +24,8 @@ def holdout_times(mapping, settings):
     return sorted(set(float(t) for t in values))
 
 
-def compare_at(reference, target, base, candidate, t, settings, edge=False):
-    old = measure_window(reference, target, base, t, settings) if edge else measure(reference, target, base, t, settings)
+def compare_at(reference, target, base, candidate, t, settings, edge=False, old=None):
+    old = old if old is not None else (measure_window(reference, target, base, t, settings) if edge else measure(reference, target, base, t, settings))
     new = measure_window(reference, target, candidate, t, settings) if edge else measure(reference, target, candidate, t, settings)
     def extract(value):
         if edge:
@@ -53,16 +53,53 @@ def compare_at(reference, target, base, candidate, t, settings, edge=False):
     return row
 
 
-def gate_micro(reference, target, base, measurements, settings, log=print, progress=None):
+def _signature(mapping, t, settings):
+    """Exact local polynomial signature for reusing unchanged PCM probes."""
+    span = (min(.45, settings.anchor_step / 6) + settings.micro_window / 2
+            + settings.micro_radius * 2 + .05) / (1 - settings.max_rate_change)
+    parts = []
+    for p in mapping.pieces:
+        if t + span < p.target[0] or t - span > p.target[-1]:
+            continue
+        lo = max(0, np.searchsorted(p.target, t - span) - 1)
+        hi = min(len(p.target), np.searchsorted(p.target, t + span) + 1)
+        parts += [p.target[lo:hi].tobytes(), p._base_reference[lo:hi].tobytes()]
+        for x, spline in p._curves:
+            a = max(0, np.searchsorted(x, t - span) - 1)
+            b = min(len(x) - 1, np.searchsorted(x, t + span))
+            parts += [x[a:b + 1].tobytes(), spline.c[:, a:b].tobytes()]
+    return tuple(parts)
+
+
+def _change_extent(base, candidate, t, settings, edge=False):
+    """A zero center correction can still modify its PCM comparison window."""
+    length = min(settings.micro_window, settings.anchor_step / 8)
+    span = length / 2 + (0. if edge else min(.45, settings.anchor_step / 6))
+    span += settings.sinc_radius / settings.analysis_rate
+    probes = np.linspace(t - span, t + span, 9)
+    a, b = base.forward(probes), candidate.forward(probes)
+    valid = np.isfinite(a) & np.isfinite(b)
+    return float(np.max(np.abs(a[valid] - b[valid]))) if valid.any() else 0.
+
+
+def gate_micro(reference, target, base, measurements, settings, log=print, progress=None, probe_times=None, strong_fast=False):
     enabled = {m.target_time for m in measurements if m.status == "MEASURED"}
-    times = holdout_times(base, settings)
-    normal_holdouts = set(grid(base, settings, phase=.5))
+    # Include training centers as well: the actual renderer checks them too.
+    times = sorted(set(holdout_times(base, settings) + grid(base, settings))) if probe_times is None else sorted(set(probe_times))
+    if probe_times is None:
+        training_times = {round(t, 9) for t in grid(base, settings)}
+        normal_holdouts = {round(t, 9) for t in grid(base, settings, phase=.5)}
+    else:
+        training_times = {round(m.target_time, 9) for m in measurements if m.method != 'analysis-boundary'}
+        boundaries = {round(m.target_time, 9) for m in measurements if m.method == 'analysis-boundary'}
+        normal_holdouts = {round(t, 9) for t in times} - training_times - boundaries
     final_rows = []
     audit = []
+    old_cache, row_cache = {}, {}
     # Quarantine only affected anchors, rebuilding from the unchanged coarse map.
-    for attempt in range(4):
+    for attempt in range(8):
         try:
-            candidate = refined_map(base, measurements, settings, enabled)
+            candidate = refined_map(base, measurements, settings, enabled, audit)
         except ValueError as exc:
             audit.append({"attempt": attempt + 1, "status": "INVALID_MAP", "reason": str(exc)})
             return base, final_rows, audit
@@ -70,14 +107,50 @@ def gate_micro(reference, target, base, measurements, settings, log=print, progr
             return base, final_rows, audit
         rows = []
         for index, t in enumerate(times):
-            edge = t not in normal_holdouts
-            row = compare_at(reference, target, base, candidate, t, settings, edge)
+            key_time = round(t, 9)
+            edge = key_time not in normal_holdouts and key_time not in training_times
+            signature = (t, _signature(candidate, t, settings))
+            if signature in row_cache:
+                row = row_cache[signature]
+            else:
+                change = float(candidate.forward([t])[0] - base.forward([t])[0])
+                extent = _change_extent(base, candidate, t, settings, edge)
+                if extent < settings.min_improvement:
+                    row = {'target_time': t, 'change_sec': change,
+                           'before_residual_sec': None, 'after_residual_sec': None,
+                           'before_score': None, 'after_score': None, 'status': 'UNCHANGED'}
+                else:
+                    if t not in old_cache:
+                        old_cache[t] = measure_window(reference, target, base, t, settings) if edge else measure(reference, target, base, t, settings)
+                    row = compare_at(reference, target, base, candidate, t, settings, edge, old_cache[t])
+                    # The recorded output must have a measurable center, even
+                    # if its neighbours supplied a virtual consensus.
+                    central = measure_window(reference, target, candidate, t, settings)
+                    if not (central and not central['near_edge'] and central['score'] >= settings.min_raw_score
+                            and central['margin'] >= settings.min_raw_margin):
+                        row = {**row, 'status': 'UNVERIFIABLE'}
+                if strong_fast and row['status'] != 'UNVERIFIABLE' and extent >= settings.min_improvement:
+                    central = measure_window(reference, target, candidate, t, settings)
+                    p = next((p for p in candidate.pieces if p.target[0] <= t <= p.target[-1]), None)
+                    fast = p is not None and abs(float(p.rate_at(np.array([t]))[0]) - 1) > .02
+                    if fast and (not central or central['score'] < .85 or central['margin'] < .12):
+                        row = {**row, 'status': 'UNVERIFIABLE'}
+                    if (row['before_score'] is not None and row['after_score'] is not None
+                            and row['after_score'] < row['before_score'] - .05):
+                        row = {**row, 'status': 'REGRESSION'}
+                row = {**row, 'change_extent_sec': extent}
+                row['probe_kind'] = 'edge' if edge else 'anchor' if key_time in training_times else 'holdout'
+                row_cache[signature] = row
             rows.append(row)
             if progress:
                 progress(index + 1, len(times))
-        bad = [r for r in rows if abs(r["change_sec"]) >= settings.min_improvement
+        bad = [r for r in rows if r.get('change_extent_sec', abs(r['change_sec'])) >= settings.min_improvement
                and r["status"] in {"REGRESSION", "UNVERIFIABLE"}]
-        audit.extend([{**r, "attempt": attempt + 1} for r in rows])
+        audit.append({'status': 'GATE_ATTEMPT', 'attempt': attempt + 1,
+                      'improved': sum(r['status'] == 'IMPROVED' for r in rows),
+                      'unchanged': sum(r['status'] == 'UNCHANGED' for r in rows),
+                      'failed': len(bad)})
+        audit.extend([{**r, 'attempt': attempt + 1} for r in bad])
         if not bad:
             improvements = sum(r["status"] == "IMPROVED" for r in rows)
             log(f"  Независимая проверка: улучшено {improvements}, ухудшений 0.")
@@ -94,10 +167,50 @@ def gate_micro(reference, target, base, measurements, settings, log=print, progr
         final_rows = rows
         log(f"  Защита: отменены {len(removed)} соседних микропоправок; повторная проверка.")
     # A bounded unresolved correction never escapes as a synced file.
+    # Clear only unresolved changed regions after the bounded iterations.
+    # Retain unrelated curves, then verify the rebuilt map once more.
+    active = sorted(enabled)
+    runs = []
+    for t in active:
+        if not runs or t - runs[-1][-1] > settings.anchor_step * 1.01:
+            runs.append([t])
+        else:
+            runs[-1].append(t)
+    blocked_runs = set()
+    for r in final_rows:
+        if r['status'] not in {'REGRESSION', 'UNVERIFIABLE'}:
+            continue
+        for run in runs:
+            if run[0] - settings.anchor_step <= r['target_time'] <= run[-1] + settings.anchor_step:
+                blocked_runs.update(run)
+    if blocked_runs:
+        enabled -= blocked_runs
+        candidate = refined_map(base, measurements, settings, enabled, audit)
+        rows = []
+        for t in times:
+            edge = round(t, 9) not in normal_holdouts and round(t, 9) not in training_times
+            if _change_extent(base, candidate, t, settings, edge) < settings.min_improvement:
+                continue
+            row = compare_at(reference, target, base, candidate, t, settings, edge, old_cache.get(t))
+            central = measure_window(reference, target, candidate, t, settings)
+            if not (central and not central['near_edge'] and central['score'] >= settings.min_raw_score
+                    and central['margin'] >= settings.min_raw_margin):
+                row = {**row, 'status': 'UNVERIFIABLE'}
+            if strong_fast and central:
+                p = next((p for p in candidate.pieces if p.target[0] <= t <= p.target[-1]), None)
+                fast = p is not None and abs(float(p.rate_at(np.array([t]))[0]) - 1) > .02
+                if fast and (central['score'] < .85 or central['margin'] < .12):
+                    row = {**row, 'status': 'UNVERIFIABLE'}
+                if (row['before_score'] is not None and row['after_score'] is not None
+                        and row['after_score'] < row['before_score'] - .05):
+                    row = {**row, 'status': 'REGRESSION'}
+            rows.append(row)
+        if rows and all(r['status'] in {'IMPROVED', 'UNCHANGED'} for r in rows) and any(r['status'] == 'IMPROVED' for r in rows):
+            return candidate, rows, audit
     return base, final_rows, audit
 
 
-def verify_render(reference, original_target, rendered, base, final, settings, progress=None):
+def verify_render(reference, original_target, rendered, base, final, settings, progress=None, target_times=None):
     """Compare decoded output against reference at the SAME reference timeline.
 
     Include holdouts and anchors. Virtual base uses the identical interpolation
@@ -105,29 +218,49 @@ def verify_render(reference, original_target, rendered, base, final, settings, p
     """
     from .model import TimeMap
     output_map = TimeMap.affine(len(rendered) / settings.analysis_rate)
-    target_times = sorted(set(holdout_times(base, settings) + grid(base, settings)))
+    target_times = sorted(set(holdout_times(base, settings) + grid(base, settings))) if target_times is None else sorted(set(target_times))
     rows = []
     for index, t in enumerate(target_times):
         center = float(final.forward([t])[0])
         if not np.isfinite(center):
             continue
         actual = measure_window(reference, rendered, output_map, center, settings)
-        baseline = measure(reference, original_target, base, t, settings)
+        baseline_center = measure_window(reference, original_target, base, t, settings)
         expected = measure_window(reference, original_target, final, t, settings)
         def valid(m):
             return bool(m and not m["near_edge"] and m["score"] >= settings.min_raw_score
                         and m["margin"] >= settings.min_raw_margin)
+        verification_length = min(settings.micro_window, settings.anchor_step / 8)
+        if not valid(actual) and settings.anchor_step < .5:
+            # A 15 ms window can contain an ambiguous fragment of a musical
+            # note even after a correct alignment. Require a unique match in
+            # a longer waveform, with the SAME context before, predicted and
+            # decoded after. Never waive the alternative-peak margin gate.
+            from dataclasses import replace
+            context = replace(settings, anchor_step=.5)
+            wide_actual = measure_window(reference, rendered, output_map, center, context)
+            wide_before = measure_window(reference, original_target, base, t, context)
+            wide_expected = measure_window(reference, original_target, final, t, context)
+            if valid(wide_actual) and valid(wide_before) and valid(wide_expected):
+                actual, baseline_center, expected = wide_actual, wide_before, wide_expected
+                verification_length = min(settings.micro_window, context.anchor_step / 8)
         changed = abs(float(final.forward([t])[0] - base.forward([t])[0])) >= settings.min_improvement
+        # Compare the same central PCM measurement before/after. Neighbour
+        # consensus can fail at a splice even when its center is measurable;
+        # it must not masquerade as loss of that center in the decoded file.
+        before_error = baseline_center['correction_sec'] if valid(baseline_center) else None
         row = {"target_time": t, "reference_time": center, "micro_changed": changed,
                "residual_sec": actual["correction_sec"] if valid(actual) else None,
-               "score": actual["score"] if actual else None, "baseline_residual_sec": baseline.correction_sec if baseline.status == "MEASURED" else None,
+               "score": actual["score"] if actual else None, "baseline_residual_sec": before_error,
                "expected_score": expected['score'] if expected else None,
+               "verification_window_sec": verification_length,
+               "baseline_center_measurable": valid(baseline_center),
                "status": "UNVERIFIABLE"}
         if valid(actual):
             row["status"] = "VERIFIED"
-            previously_measured = baseline.status == 'MEASURED'
+            previously_measured = before_error is not None
             worsened = previously_measured and (
-                abs(actual['correction_sec']) > abs(baseline.correction_sec) + 1 / settings.analysis_rate
+                abs(actual['correction_sec']) > abs(before_error) + 1 / settings.analysis_rate
             )
             # Compare renderer fidelity to the predicted corrected PCM, not
             # to the waveform of the intentionally uncorrected source.
@@ -135,7 +268,7 @@ def verify_render(reference, original_target, rendered, base, final, settings, p
                              and actual['score'] < expected['score'] - .025))
             if (changed and not previously_measured) or worsened or fidelity_lost:
                 row["status"] = "REGRESSION"
-        elif baseline.status == "MEASURED":
+        elif valid(baseline_center):
             # Losing a previously measurable common waveform is a regression,
             # including a lag outside the ±25 ms search radius or corrupted PCM.
             row["status"] = "REGRESSION"
@@ -161,3 +294,62 @@ def render_verdict(rows, require_micro=True):
     if sufficient:
         return "VERIFIED_PCM"
     return "UNVERIFIED_PCM" if require_micro else "VERIFIED_ENVELOPE_ONLY"
+
+
+def cancel_unsafe_components(base, candidate, bad_times, max_rate_change=.02):
+    """Return unsafe PCM neighbourhoods to the baseline, retaining distant curves.
+
+    Add knots only near a failed window, with a smooth return to zero. Removing
+    a whole clock curve would throw away a movie's improvements for one splice.
+    All modified boundaries must subsequently pass decoded-output verification.
+    """
+    from .model import Piece, TimeMap
+    output = []
+    removed = []
+    for bp, p in zip(base.pieces, candidate.pieces):
+        retained = []
+        for curve in p.corrections:
+            x = np.asarray(curve['target'], float)
+            y = np.asarray(curve['delta'], float).copy()
+            active_intervals = (np.abs(y[:-1]) > 1e-12) | (np.abs(y[1:]) > 1e-12)
+            i = 0
+            while i < len(active_intervals):
+                if not active_intervals[i]:
+                    i += 1
+                    continue
+                a = i
+                while i + 1 < len(active_intervals) and active_intervals[i + 1]:
+                    i += 1
+                b = i + 1
+                times = [t for t in bad_times if x[a] - .05 <= t <= x[b] + .05]
+                if times:
+                    # A 50 ms protected centre covers the PCM window and sinc
+                    # halo. The taper is long enough for the permitted rate.
+                    taper = max(.15, 2 * float(np.max(np.abs(y[a:b + 1]))) / max_rate_change)
+                    additions = []
+                    for t in times:
+                        lo, hi = max(x[a], t - .05 - taper), min(x[b], t + .05 + taper)
+                        additions.extend(np.linspace(lo, hi, max(3, int((hi-lo)/.04)+2)))
+                        additions += [max(x[a], t-.05), min(x[b], t+.05)]
+                        removed.append({'start': float(lo), 'end': float(hi), 'failed_time': float(t)})
+                    old_x, old_y = x, y
+                    x = np.unique(np.r_[x, additions])
+                    from scipy.interpolate import PchipInterpolator
+                    y = PchipInterpolator(old_x, old_y)(x)
+                    for t in times:
+                        distance = np.maximum(0., np.abs(x-t) - .05)
+                        weight = .5 - .5 * np.cos(np.pi * np.minimum(1., distance / taper))
+                        y *= weight
+                    # Recompute components against the enlarged knot array.
+                    active_intervals = (np.abs(y[:-1]) > 1e-12) | (np.abs(y[1:]) > 1e-12)
+                    i = int(np.searchsorted(x, old_x[b])) - 1
+                i += 1
+            if np.any(np.abs(y) > 1e-12):
+                retained.append({'target': x.tolist(), 'delta': y.tolist()})
+        knots = np.unique(np.r_[bp.target, p.target])
+        # Baseline is the identity of the actual coarse render. This path is
+        # used by the post-render refiner, not by the legacy coarse pipeline.
+        trial = Piece(knots, bp.reference_at(knots), retained)
+        delta = trial.correction_at(knots)
+        output.append(Piece(knots, bp.reference_at(knots) + delta, retained))
+    return TimeMap(output, list(base.notes)), removed
