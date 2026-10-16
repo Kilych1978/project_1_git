@@ -292,7 +292,8 @@ def _analyze_candidate(reference, baseline, base, settings, report, progress):
 
 
 def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_dir,
-                          settings=None, make_plots=True, resume_report=None):
+                          settings=None, make_plots=True):
+    """Analyze this run's decoded audio and write a separately verified result."""
     started = time.monotonic()
     settings = settings or Settings(anchor_step=1., min_improvement=1. / 48000, max_rate_change=.02)
     fine_dir = output_dir / '_pcm_micro'
@@ -313,7 +314,8 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
         reference = np.memmap(analysis['reference_pcm'], mode='r', dtype='<i2')
         baseline_pcm = render_result.get('verified_first_channel_pcm')
         if not baseline_pcm:
-            # Standalone invocation / tests; production reuses the coarse guard decode.
+            # The coarse guard may already have decoded this run's baseline.
+            # Otherwise decode it now; no previous output directory is loaded.
             from analyzer import decode_first_channel_stream
             from scanner import probe_audio_file
             baseline_pcm = fine_dir / 'baseline_s16le.pcm'
@@ -325,32 +327,8 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
         base = TimeMap.affine(duration)
         report['baseline_duration'] = duration
         report['expected_output_duration'] = output_duration
-        if resume_report is None:
-            fine, holdouts, measurements, settings, audit, verification_schedules = _analyze_candidate(
-                reference, baseline, base, settings, report, progress)
-        else:
-            fine = TimeMap.from_dict(resume_report['fine_map'])
-            if abs(fine.pieces[-1].target[-1] - duration) > 1/settings.analysis_rate:
-                raise ValueError('Длительность сохранённой карты не совпадает с PCM.')
-            settings = replace(settings, anchor_step=float(resume_report['selected_step_sec']),
-                               max_rate_change=.08 if resume_report.get('local_zoom_applied') else .02)
-            fine.validate(settings.max_rate_change)
-            measurements = [Measurement(**m) for m in resume_report['measurements']]
-            holdouts = resume_report['independent_windows'] + resume_report.get('anchor_validation_windows', [])
-            schedules = {}
-            for row in resume_report.get('actual_output_windows', []):
-                step = float(row.get('analysis_step_sec', settings.anchor_step))
-                schedules.setdefault(step, set()).add(float(row['target_time']))
-            if not schedules:
-                schedules[settings.anchor_step] = {m.target_time for m in measurements} | {r['target_time'] for r in holdouts}
-            verification_schedules = [(replace(settings, anchor_step=step), sorted(times))
-                                      for step, times in schedules.items()]
-            audit = report['audit']
-            report.update(measurements=[m.to_dict() for m in measurements],
-                          independent_windows=resume_report['independent_windows'],
-                          anchor_validation_windows=resume_report.get('anchor_validation_windows', []),
-                          selected_step_sec=settings.anchor_step, analysis_steps_sec=[],
-                          resumed_candidate=True, previous_status=resume_report['status'])
+        fine, holdouts, measurements, settings, audit, verification_schedules = _analyze_candidate(
+            reference, baseline, base, settings, report, progress)
         # Verify the EXACT waveform and acceptance rules that will be used on
         # the decoded WAV before spending time rendering every audio channel.
         # Reuse unchanged probes when local cancellation changes only a splice.

@@ -36,7 +36,6 @@ test_pcm_copy_fallback_never_overwrites_source_or_previous_sibling (tests.test_m
 test_preview_rejects_worse_timing_before_any_multichannel_render (tests.test_modular_fix.ModularFixTests.test_preview_rejects_worse_timing_before_any_multichannel_render) ... ok
 test_real_failed_clock_cancellation_keeps_valid_rate (tests.test_modular_fix.ModularFixTests.test_real_failed_clock_cancellation_keeps_valid_rate) ... ok
 test_safety_edge_taper_does_not_create_an_impossible_render_tempo (tests.test_modular_fix.ModularFixTests.test_safety_edge_taper_does_not_create_an_impossible_render_tempo) ... ok
-test_saved_run_resumes_without_repeating_map_analysis (tests.test_modular_fix.ModularFixTests.test_saved_run_resumes_without_repeating_map_analysis) ... ok
 test_splice_center_uses_reciprocal_pcm_instead_of_false_linear_clock (tests.test_modular_fix.ModularFixTests.test_splice_center_uses_reciprocal_pcm_instead_of_false_linear_clock) ... ok
 test_user_failure_measurements_no_long_gap_global_abort (tests.test_modular_fix.ModularFixTests.test_user_failure_measurements_no_long_gap_global_abort) ... ok
 test_44100_hz_is_preserved_and_float_peaks_are_not_clipped (tests.test_render.RenderTests.test_44100_hz_is_preserved_and_float_peaks_are_not_clipped) ... ok
@@ -51,6 +50,6 @@ test_invalid_maps_and_overlapping_edits_are_rejected (tests.test_render.RenderTe
 test_out_of_range_is_silence (tests.test_render.RenderTests.test_out_of_range_is_silence) ... ok
 
 ----------------------------------------------------------------------
-Ran 39 tests in 112.193s
+Ran 38 tests in 89.223s
 
 OK

@@ -58,38 +58,6 @@ class ModularFixTests(unittest.TestCase):
         rows = verify_candidate_pcm(x, y, base, good, Settings(anchor_step=1.))
         self.assertEqual(render_verdict(rows), 'VERIFIED_PCM')
 
-    def test_saved_run_resumes_without_repeating_map_analysis(self):
-        from resume_launcher import resume
-        from scanner import save_initial_metadata
-        import shutil
-        x = soundtrack(14., 987)
-        y = np.r_[np.zeros(round(.006*SR)), x[:-round(.006*SR)]]
-        with tempfile.TemporaryDirectory() as td:
-            directory = Path(td)
-            _, _, report, previous = self.run_fine(directory, x, y, channels=6)
-            self.assertEqual(report['status'], 'PCM_REFINED')
-            report['status'] = 'BASELINE_KEPT_ERROR'
-            (previous/'PCM_MICRO_REPORT.json').write_text(json.dumps(report))
-            selected = SelectedTracks(probe_audio_file(directory/'эталон.wav'),probe_audio_file(directory/'перевод.wav'))
-            save_initial_metadata(previous, selected)
-            analysis_info = {'analysis_sample_rate': SR, 'pcm_format': 's16le'}
-            for role,name in [('reference','ref.pcm'),('target','target.pcm')]:
-                p=previous/f'{role}_first_channel_s16le.pcm'
-                shutil.copyfile(directory/name, p)
-                analysis_info[f'{role}_decode'] = {'path':str(p),'size_bytes':p.stat().st_size,'duration':14.}
-            (previous/'analysis_info.json').write_text(json.dumps(analysis_info))
-            (previous/'FINAL_SYNC_MAP.json').write_text(json.dumps({'coarse_map_before_pcm':{
-                'target_time':[0.,14.],'reference_time':[0.,14.],'offset':[0.,0.]}}))
-            old_hash=hashlib.sha256((previous/'PCM_MICRO_REPORT.json').read_bytes()).hexdigest()
-            with patch('pcm_refiner._analyze_candidate',side_effect=AssertionError('analysis repeated')), \
-                 patch('builtins.input',return_value='y'), contextlib.redirect_stdout(io.StringIO()):
-                result=resume(previous)
-            self.assertEqual(result['pcm_micro_refinement']['status'],'PCM_REFINED')
-            self.assertTrue(result['pcm_micro_refinement']['resumed_candidate'])
-            self.assertEqual(result['pcm_micro_refinement']['analysis_steps_sec'],[])
-            self.assertEqual(hashlib.sha256((previous/'PCM_MICRO_REPORT.json').read_bytes()).hexdigest(),old_hash)
-            self.assertEqual(probe_audio_file(Path(result['output_file'])).channels,6)
-
     def test_decoded_failure_removes_only_its_component_and_rerenders_baseline(self):
         x = soundtrack(14., 921)
         from scipy.signal import butter, sosfiltfilt
@@ -191,7 +159,7 @@ class ModularFixTests(unittest.TestCase):
             rp, tp = directory/'01_reference.wav', directory/'02_target.wav'
             write_audio(rp, x)
             write_audio(tp, np.stack([y, y*.5, soundtrack(14., 772), y*.2, y*.7, y*.3], axis=1), layout='5.1')
-            before = hashlib.sha256(tp.read_bytes()).hexdigest()
+            before = [hashlib.sha256(p.read_bytes()).hexdigest() for p in (rp, tp)]
             output = io.StringIO()
             with patch.object(scanner, 'BASE_DIR', directory), patch('builtins.input', side_effect=['1','1','y']), contextlib.redirect_stdout(output):
                 main()
@@ -200,8 +168,12 @@ class ModularFixTests(unittest.TestCase):
             report_path = next(directory.glob('*_WAVEFORM_SYNC/FINAL_SYNC_MAP.json'))
             report = json.loads(report_path.read_text())
             self.assertEqual(report['pcm_micro_refinement']['status'], 'PCM_REFINED')
+            self.assertTrue(report['pcm_micro_refinement']['analysis_steps_sec'])
+            self.assertEqual(Path(report['output_file']).parent, report_path.parent)
+            for role in ('reference', 'target'):
+                self.assertTrue((report_path.parent / f'{role}_first_channel_s16le.pcm').is_file())
             self.assertEqual(probe_audio_file(Path(report['output_file'])).channels, 6)
-            self.assertEqual(hashlib.sha256(tp.read_bytes()).hexdigest(), before)
+            self.assertEqual([hashlib.sha256(p.read_bytes()).hexdigest() for p in (rp, tp)], before)
 
     def test_safety_edge_taper_does_not_create_an_impossible_render_tempo(self):
         t = np.arange(0., 241., 1.)
