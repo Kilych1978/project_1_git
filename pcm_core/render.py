@@ -34,9 +34,9 @@ def render(info, mapping, reference_duration, directory, settings, log=print, pr
                 for begin in range(0, frames, 16384):
                     end = min(frames, begin + 16384)
                     ref_times = np.arange(begin, end, dtype=np.float64) / sr
-                    positions = mapping.inverse(ref_times) * sr
+                    source_times, delta = mapping.inverse_with_rate(ref_times)
+                    positions = source_times * sr
                     # A discontinuity must not become an anti-alias rate estimate.
-                    delta = mapping.inverse_rate(ref_times)
                     cutoff = np.minimum(1., 1 / np.maximum(np.nan_to_num(delta, nan=1.), 1.))
                     values = sinc_sample(source, positions, settings.sinc_radius, cutoff)
                     process.stdin.write(values.astype("<f4", copy=False).tobytes())

@@ -98,6 +98,8 @@ def gate_micro(reference, target, base, measurements, settings, log=print, progr
     old_cache, row_cache = {}, {}
     # Quarantine only affected anchors, rebuilding from the unchanged coarse map.
     for attempt in range(8):
+        if progress is not None and hasattr(progress, 'begin_pass'):
+            progress.begin_pass(attempt+1, 8)
         try:
             candidate = refined_map(base, measurements, settings, enabled, audit)
         except ValueError as exc:
@@ -158,8 +160,11 @@ def gate_micro(reference, target, base, measurements, settings, log=print, progr
                 return candidate, rows, audit
             return base, rows, audit
         removed = set()
+        ordered_enabled = np.array(sorted(enabled))
         for r in bad:
-            distances = sorted((abs(t - r["target_time"]), t) for t in enabled)
+            i = int(np.searchsorted(ordered_enabled, r['target_time']))
+            neighbours = ordered_enabled[max(0, i-2):i+2]
+            distances = sorted((abs(t - r["target_time"]), t) for t in neighbours)
             removed.update(t for _, t in distances[:2])
         if not removed:
             break
@@ -210,37 +215,50 @@ def gate_micro(reference, target, base, measurements, settings, log=print, progr
     return base, final_rows, audit
 
 
-def verify_render(reference, original_target, rendered, base, final, settings, progress=None, target_times=None):
+def verify_render(reference, original_target, rendered, base, final, settings, progress=None, target_times=None,
+                  row_cache=None, baseline_cache=None):
     """Compare decoded output against reference at the SAME reference timeline.
 
     Include holdouts and anchors. Virtual base uses the identical interpolation
     kernel. Final decoded residuals, not predicted map errors, drive acceptance.
     """
     from .model import TimeMap
-    output_map = TimeMap.affine(len(rendered) / settings.analysis_rate)
+    virtual = rendered is None
+    output_map = None if virtual else TimeMap.affine(len(rendered) / settings.analysis_rate)
+    row_cache = {} if row_cache is None else row_cache
+    baseline_cache = {} if baseline_cache is None else baseline_cache
     target_times = sorted(set(holdout_times(base, settings) + grid(base, settings))) if target_times is None else sorted(set(target_times))
     rows = []
     for index, t in enumerate(target_times):
+        cache_key = (settings, t, _signature(final, t, settings)) if virtual else None
+        if virtual and cache_key in row_cache:
+            rows.append(row_cache[cache_key])
+            if progress:
+                progress(index + 1, len(target_times))
+            continue
         center = float(final.forward([t])[0])
         if not np.isfinite(center):
             continue
-        actual = measure_window(reference, rendered, output_map, center, settings)
-        baseline_center = measure_window(reference, original_target, base, t, settings)
+        key = (settings, t)
+        if key not in baseline_cache:
+            baseline_cache[key] = measure_window(reference, original_target, base, t, settings)
+        baseline_center = baseline_cache[key]
         expected = measure_window(reference, original_target, final, t, settings)
+        actual = expected if virtual else measure_window(reference, rendered, output_map, center, settings)
         def valid(m):
             return bool(m and not m["near_edge"] and m["score"] >= settings.min_raw_score
                         and m["margin"] >= settings.min_raw_margin)
         verification_length = min(settings.micro_window, settings.anchor_step / 8)
-        if not valid(actual) and settings.anchor_step < .5:
+        if (not valid(actual) or not valid(baseline_center)) and settings.anchor_step < .5:
             # A 15 ms window can contain an ambiguous fragment of a musical
             # note even after a correct alignment. Require a unique match in
             # a longer waveform, with the SAME context before, predicted and
             # decoded after. Never waive the alternative-peak margin gate.
             from dataclasses import replace
             context = replace(settings, anchor_step=.5)
-            wide_actual = measure_window(reference, rendered, output_map, center, context)
             wide_before = measure_window(reference, original_target, base, t, context)
             wide_expected = measure_window(reference, original_target, final, t, context)
+            wide_actual = wide_expected if virtual else measure_window(reference, rendered, output_map, center, context)
             if valid(wide_actual) and valid(wide_before) and valid(wide_expected):
                 actual, baseline_center, expected = wide_actual, wide_before, wide_expected
                 verification_length = min(settings.micro_window, context.anchor_step / 8)
@@ -273,9 +291,16 @@ def verify_render(reference, original_target, rendered, base, final, settings, p
             # including a lag outside the ±25 ms search radius or corrupted PCM.
             row["status"] = "REGRESSION"
         rows.append(row)
+        if virtual:
+            row_cache[cache_key] = row
         if progress:
             progress(index + 1, len(target_times))
     return rows
+
+
+def verify_candidate_pcm(reference, original_target, base, final, settings, **kwargs):
+    """Same final acceptance rules, same sinc PCM, before multichannel rendering."""
+    return verify_render(reference, original_target, None, base, final, settings, **kwargs)
 
 
 def render_verdict(rows, require_micro=True):
@@ -296,7 +321,8 @@ def render_verdict(rows, require_micro=True):
     return "UNVERIFIED_PCM" if require_micro else "VERIFIED_ENVELOPE_ONLY"
 
 
-def cancel_unsafe_components(base, candidate, bad_times, max_rate_change=.02):
+def cancel_unsafe_components(base, candidate, bad_times, max_rate_change=.02, whole_components=False,
+                             rollback_rate=.001):
     """Return unsafe PCM neighbourhoods to the baseline, retaining distant curves.
 
     Add knots only near a failed window, with a smooth return to zero. Removing
@@ -321,25 +347,32 @@ def cancel_unsafe_components(base, candidate, bad_times, max_rate_change=.02):
                 while i + 1 < len(active_intervals) and active_intervals[i + 1]:
                     i += 1
                 b = i + 1
-                times = [t for t in bad_times if x[a] - .05 <= t <= x[b] + .05]
+                times = [t for t in bad_times if x[a] - .25 <= t <= x[b] + .25]
                 if times:
-                    # A 50 ms protected centre covers the PCM window and sinc
+                    # A 250 ms protected half-window covers all PCM contexts and sinc
                     # halo. The taper is long enough for the permitted rate.
-                    taper = max(.15, 2 * float(np.max(np.abs(y[a:b + 1]))) / max_rate_change)
+                    # A rate that is legal for an edit can still destroy PCM
+                    # coherence over a 125/220 ms window. Undo a local offset
+                    # at clock-drift speed, not at the maximum edit speed.
+                    taper = max(.15, 2 * float(np.max(np.abs(y[a:b + 1]))) /
+                                min(max_rate_change, rollback_rate))
                     additions = []
                     for t in times:
-                        lo, hi = max(x[a], t - .05 - taper), min(x[b], t + .05 + taper)
+                        lo, hi = max(x[a], t - .25 - taper), min(x[b], t + .25 + taper)
                         additions.extend(np.linspace(lo, hi, max(3, int((hi-lo)/.04)+2)))
-                        additions += [max(x[a], t-.05), min(x[b], t+.05)]
+                        additions += [max(x[a], t-.25), min(x[b], t+.25)]
                         removed.append({'start': float(lo), 'end': float(hi), 'failed_time': float(t)})
                     old_x, old_y = x, y
                     x = np.unique(np.r_[x, additions])
                     from scipy.interpolate import PchipInterpolator
                     y = PchipInterpolator(old_x, old_y)(x)
                     for t in times:
-                        distance = np.maximum(0., np.abs(x-t) - .05)
+                        distance = np.maximum(0., np.abs(x-t) - .25)
                         weight = .5 - .5 * np.cos(np.pi * np.minimum(1., distance / taper))
-                        y *= weight
+                        # A long taper must stop at this component's existing
+                        # zero barriers, preserving independent regions exactly.
+                        local = (x >= old_x[a]) & (x <= old_x[b])
+                        y[local] *= weight[local]
                     # Recompute components against the enlarged knot array.
                     active_intervals = (np.abs(y[:-1]) > 1e-12) | (np.abs(y[1:]) > 1e-12)
                     i = int(np.searchsorted(x, old_x[b])) - 1
@@ -352,4 +385,42 @@ def cancel_unsafe_components(base, candidate, bad_times, max_rate_change=.02):
         trial = Piece(knots, bp.reference_at(knots), retained)
         delta = trial.correction_at(knots)
         output.append(Piece(knots, bp.reference_at(knots) + delta, retained))
-    return TimeMap(output, list(base.notes)), removed
+    result = TimeMap(output, list(base.notes))
+    try:
+        if whole_components:
+            raise ValueError('Отмена неподтверждённого участка целиком.')
+        return result.validate(max_rate_change), removed
+    except ValueError:
+        # Multiplying an existing near-limit clock curve by a smooth mask can
+        # still exceed the rate limit. Remove complete connected components
+        # instead. Zero plateaus separate their PCHIP derivatives exactly.
+        output = []
+        for bp, p in zip(base.pieces, candidate.pieces):
+            components = []
+            for curve_index, curve in enumerate(p.corrections):
+                x, y = np.asarray(curve['target']), np.asarray(curve['delta'])
+                active = (np.abs(y[:-1]) > 1e-12) | (np.abs(y[1:]) > 1e-12)
+                starts = np.flatnonzero(active & ~np.r_[False, active[:-1]])
+                ends = np.flatnonzero(active & ~np.r_[active[1:], False]) + 1
+                components += [(curve_index, int(a), int(b), float(x[a]), float(x[b]))
+                               for a, b in zip(starts, ends)]
+            blocked = {i for i, c in enumerate(components)
+                       if any(c[3]-.25 <= t <= c[4]+.25 for t in bad_times)}
+            # A later residual curve depends on earlier corrections: cancel
+            # all overlapping components together, rather than leave it alone.
+            while True:
+                extra = {i for i, c in enumerate(components) if i not in blocked
+                         and any(c[3] < components[j][4] and c[4] > components[j][3] for j in blocked)}
+                if not extra:
+                    break
+                blocked |= extra
+            curves = [{'target': list(c['target']), 'delta': list(c['delta'])} for c in p.corrections]
+            for i in blocked:
+                ci, a, b, lo, hi = components[i]
+                curves[ci]['delta'][a:b+1] = [0.]*(b-a+1)
+                removed.append({'start': lo, 'end': hi, 'mode': 'whole_component_rate_fallback'})
+            curves = [c for c in curves if np.any(np.abs(c['delta']) > 1e-12)]
+            knots = np.unique(np.r_[bp.target, p.target])
+            trial = Piece(knots, bp.reference_at(knots), curves)
+            output.append(Piece(knots, bp.reference_at(knots) + trial.correction_at(knots), curves))
+        return TimeMap(output, list(base.notes)).validate(max_rate_change), removed

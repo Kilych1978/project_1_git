@@ -47,6 +47,7 @@ class Piece:
             if not (np.diff(corrected) > 0).all():
                 raise ValueError("Микропоправка нарушила монотонность карты.")
             self.target, self.reference, self._base_reference = knots, corrected, baseline
+        self._base_slopes = np.diff(self._base_reference) / np.diff(self.target)
 
     def correction_at(self, times, derivative=0):
         t = np.asarray(times, dtype=float)
@@ -62,8 +63,7 @@ class Piece:
     def rate_at(self, times):
         t = np.asarray(times, dtype=float)
         index = np.clip(np.searchsorted(self.target, t, side="right") - 1, 0, len(self.target) - 2)
-        slopes = np.diff(self._base_reference) / np.diff(self.target)
-        return slopes[index] + self.correction_at(t, derivative=1)
+        return self._base_slopes[index] + self.correction_at(t, derivative=1)
 
     def inverse_at(self, ref_times):
         r = np.asarray(ref_times, dtype=float)
@@ -138,6 +138,17 @@ class TimeMap:
             positions = p.inverse_at(x[valid])
             out[valid] = 1 / p.rate_at(positions)
         return out
+
+    def inverse_with_rate(self, times):
+        """Source positions and antialias rate from the same exact inversion."""
+        x = np.asarray(times, dtype=np.float64)
+        positions = np.full(x.shape, np.nan)
+        rates = np.full(x.shape, np.nan)
+        for p in self.pieces:
+            valid = (x >= p.reference[0]) & (x < p.reference[-1])
+            positions[valid] = p.inverse_at(x[valid])
+            rates[valid] = 1 / p.rate_at(positions[valid])
+        return positions, rates
 
     def local_rate(self, target_time):
         for p in self.pieces:

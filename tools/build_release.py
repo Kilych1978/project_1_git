@@ -5,7 +5,7 @@ from pathlib import Path
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-NAME = 'Universal_Audio_Waveform_Sync_modular_v6.9.3'
+NAME = 'Universal_Audio_Waveform_Sync_modular_v6.9.4'
 
 
 def main():
@@ -29,7 +29,7 @@ def main():
     destination = directory / (NAME + '.zip')
     with zipfile.ZipFile(destination, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in files:
-            item = zipfile.ZipInfo(NAME + '/' + path.relative_to(ROOT).as_posix(), (2026, 10, 14, 0, 0, 0))
+            item = zipfile.ZipInfo(NAME + '/' + path.relative_to(ROOT).as_posix(), (2026, 10, 16, 0, 0, 0))
             item.compress_type = zipfile.ZIP_DEFLATED
             item.external_attr = 0o100644 << 16
             archive.writestr(item, path.read_bytes())

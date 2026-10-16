@@ -19,19 +19,27 @@ from common import Progress, format_seconds
 from pcm_core.audio import probe, decode
 from pcm_core.config import Settings
 from pcm_core.guard import (gate_micro, same_map, verify_render, render_verdict,
-                            cancel_unsafe_components)
+                            cancel_unsafe_components, verify_candidate_pcm)
 from pcm_core.micro import collect, Measurement
 from pcm_core.model import TimeMap
 from pcm_core.render import render
 
 
 class _ProgressCallback:
-    def __init__(self, title, seconds=False):
+    def __init__(self, title, seconds=False, timings=None):
         self.progress = Progress()
         self.title = title
+        self.base_title = title
         self.last = 0.
         self.seconds = seconds
+        self.started = time.monotonic()
+        self.timings = timings
         self.progress.stage(title)
+
+    def begin_pass(self, index, total):
+        self.title = f'{self.base_title} | проход {index}/{total}'
+        self.progress = Progress()
+        self.last = 0.
 
     def __call__(self, done, total):
         now = time.monotonic()
@@ -50,6 +58,8 @@ class _ProgressCallback:
 
     def finish(self):
         self.progress.done(100., self.title)
+        if self.timings is not None:
+            self.timings.append({'stage': self.title, 'elapsed_sec': time.monotonic()-self.started})
 
 
 def _write_csv(path, rows):
@@ -169,16 +179,131 @@ def export_diagnostic_clips(reference, baseline, output_dir, sample_rate=48000, 
     return destination
 
 
+def _analyze_candidate(reference, baseline, base, settings, report, progress):
+    duration = len(baseline) / settings.analysis_rate
+    callback = progress('ПОИСК ОСТАТОЧНОГО СДВИГА ПО PCM-ОТСЧЁТАМ')
+    measurements = collect(reference, baseline, base, settings, log=lambda _: None, progress=callback)
+    callback.finish()
+    report['measurements'] = [m.to_dict() for m in measurements]
+    callback = progress('НЕЗАВИСИМАЯ ПРОВЕРКА МИКРОПОПРАВОК')
+    fine, holdouts, audit = gate_micro(reference, baseline, base, measurements,
+                                      settings, log=lambda _: None, progress=callback)
+    callback.finish()
+    def value(rows, step):
+        independent = sorted([r for r in rows if r.get('probe_kind') != 'anchor'], key=lambda r: r['target_time'])
+        if not independent:
+            return 0., 0.
+        times = np.array([r['target_time'] for r in independent])
+        borders = np.r_[0., (times[:-1] + times[1:]) / 2, duration]
+        weights = np.maximum(0., np.diff(borders))
+        precise = gain = 0.
+        for row, weight in zip(independent, weights):
+            if row['status'] != 'IMPROVED':
+                continue
+            remaining = abs(row['after_residual_sec'])
+            improvement = max(0., abs(row['before_residual_sec']) - remaining)
+            precise += improvement * weight / (1 + remaining * settings.analysis_rate)
+            gain += improvement * weight
+        return precise, gain
+    best = (fine, holdouts, measurements, settings)
+    best_value = value(holdouts, settings.anchor_step) if not same_map(base, fine) else (0., 0.)
+    steps = [settings.anchor_step]
+    # Refine temporal sampling when a curved local residual survives the
+    # first pass. Recompute estimates and independent windows at each step.
+    for step in (2., 1.):
+        if step >= settings.anchor_step:
+            continue
+        evidence = holdouts if holdouts else audit
+        needs_dense = any(r.get('before_residual_sec') is not None
+                          and abs(r.get('after_residual_sec') or 0.) > 2 / settings.analysis_rate
+                          and abs(r['before_residual_sec']) > .0005 for r in evidence)
+        needs_dense = needs_dense or sum(
+            m.status == 'MEASURED' and abs(m.correction_sec) > .0005
+            and abs(float(fine.forward([m.target_time])[0] - m.target_time)) < .9 * abs(m.correction_sec)
+            for m in measurements) >= 3
+        if not needs_dense:
+            break
+        settings = replace(settings, anchor_step=step)
+        steps.append(step)
+        callback = progress('УТОЧНЕНИЕ УЧАСТКОВ С МЕНЯЮЩИМСЯ ОСТАТОЧНЫМ СДВИГОМ')
+        measurements = collect(reference, baseline, base, settings, log=lambda _: None, progress=callback)
+        callback.finish()
+        callback = progress('НЕЗАВИСИМАЯ ПРОВЕРКА УТОЧНЁННОЙ СЕТКИ PCM')
+        fine, holdouts, next_audit = gate_micro(reference, baseline, base, measurements,
+                                               settings, log=lambda _: None, progress=callback)
+        callback.finish()
+        audit += next_audit
+        score = value(holdouts, settings.anchor_step) if not same_map(base, fine) else (0., 0.)
+        if score > best_value:
+            best = (fine, holdouts, measurements, settings)
+            best_value = score
+    fine, holdouts, measurements, settings = best
+    verification_schedules = [(settings, None)]
+    # Zoom only on unresolved, measurable regions. The already verified
+    # map is the baseline; a failed zoom cannot discard it or affect other
+    # parts of the movie. Extra speed changes require stronger PCM proof.
+    hotspots = [r['target_time'] for r in holdouts if r['status'] == 'IMPROVED'
+                and r.get('after_residual_sec') is not None
+                and abs(r['after_residual_sec']) > .0001
+                and r.get('before_residual_sec') is not None
+                and abs(r['before_residual_sec']) > .0001]
+    zones = []
+    for t in sorted(hotspots):
+        lo, hi = max(.25, t - 1.5), min(duration - .25, t + 1.5)
+        if zones and lo <= zones[-1][1]:
+            zones[-1] = (zones[-1][0], max(hi, zones[-1][1]))
+        else:
+            zones.append((lo, hi))
+    if zones:
+        zoom = replace(settings, anchor_step=.125, max_rate_change=.08)
+        centers, probes, barriers = [], [], []
+        for lo, hi in zones:
+            values = np.arange(lo + zoom.anchor_step / 2, hi, zoom.anchor_step)
+            centers.extend(values.tolist())
+            probes.extend(np.arange(lo, hi + 1e-9, zoom.anchor_step / 2).tolist())
+            barriers += [Measurement(lo, float(fine.forward([lo])[0]), None, method='analysis-boundary'),
+                         Measurement(hi, float(fine.forward([hi])[0]), None, method='analysis-boundary')]
+        callback = progress('ТОЧЕЧНОЕ УТОЧНЕНИЕ ОСТАВШИХСЯ ПЕРЕХОДОВ')
+        local_rows = collect(reference, baseline, fine, zoom, log=lambda _: None,
+                             progress=callback, centers=centers)
+        callback.finish()
+        local_rows = sorted([*local_rows, *barriers], key=lambda m: m.target_time)
+        callback = progress('НЕЗАВИСИМАЯ ПРОВЕРКА ТОЧЕЧНЫХ ПОПРАВОК')
+        candidate, zoom_rows, zoom_audit = gate_micro(
+            reference, baseline, fine, local_rows, zoom, log=lambda _: None,
+            progress=callback, probe_times=probes, strong_fast=True)
+        callback.finish()
+        audit.extend(zoom_audit)
+        report['local_zones'] = zones
+        report['local_measurements'] = [m.to_dict() for m in local_rows]
+        if not same_map(fine, candidate):
+            fine = candidate
+            verification_schedules.append((zoom, probes))
+            settings = zoom
+            holdouts += zoom_rows
+            report['local_zoom_applied'] = True
+    report['selected_step_sec'] = settings.anchor_step
+    report['analysis_steps_sec'] = steps
+    report['measurements'] = [m.to_dict() for m in measurements]
+    report.update(independent_windows=[r for r in holdouts if r.get('probe_kind') != 'anchor'],
+                  anchor_validation_windows=[r for r in holdouts if r.get('probe_kind') == 'anchor'],
+                  audit=audit, fine_map=fine.to_dict())
+    return fine, holdouts, measurements, settings, audit, verification_schedules
+
+
 def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_dir,
-                          settings=None, make_plots=True):
-    settings = settings or Settings(min_improvement=1. / 48000, max_rate_change=.02)
+                          settings=None, make_plots=True, resume_report=None):
+    started = time.monotonic()
+    settings = settings or Settings(anchor_step=1., min_improvement=1. / 48000, max_rate_change=.02)
     fine_dir = output_dir / '_pcm_micro'
     fine_dir.mkdir(parents=True, exist_ok=False)
     baseline_path = Path(render_result['output_path'])
     report = {'status': 'BASELINE_KEPT', 'baseline_file': str(baseline_path),
               'output_file': str(baseline_path), 'sample_rate': settings.analysis_rate,
               'independent_windows': [], 'actual_output_windows': [], 'audit': [],
-              'coarse_algorithm': 'original v6.9.1', 'measurements': []}
+              'coarse_algorithm': 'original v6.9.1', 'measurements': [], 'stage_timings_sec': []}
+    def progress(title, seconds=False):
+        return _ProgressCallback(title, seconds, report['stage_timings_sec'])
     reference = baseline = actual = None
     measurements, holdouts, actual_rows = [], [], []
     candidate_path = None
@@ -200,112 +325,75 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
         base = TimeMap.affine(duration)
         report['baseline_duration'] = duration
         report['expected_output_duration'] = output_duration
-        callback = _ProgressCallback('ПОИСК ОСТАТОЧНОГО СДВИГА ПО PCM-ОТСЧЁТАМ')
-        measurements = collect(reference, baseline, base, settings, log=lambda _: None, progress=callback)
-        callback.finish()
-        report['measurements'] = [m.to_dict() for m in measurements]
-        callback = _ProgressCallback('НЕЗАВИСИМАЯ ПРОВЕРКА МИКРОПОПРАВОК')
-        fine, holdouts, audit = gate_micro(reference, baseline, base, measurements,
-                                          settings, log=lambda _: None, progress=callback)
-        callback.finish()
-        def value(rows, step):
-            independent = sorted([r for r in rows if r.get('probe_kind') != 'anchor'], key=lambda r: r['target_time'])
-            if not independent:
-                return 0., 0.
-            times = np.array([r['target_time'] for r in independent])
-            borders = np.r_[0., (times[:-1] + times[1:]) / 2, duration]
-            weights = np.maximum(0., np.diff(borders))
-            precise = gain = 0.
-            for row, weight in zip(independent, weights):
-                if row['status'] != 'IMPROVED':
-                    continue
-                remaining = abs(row['after_residual_sec'])
-                improvement = max(0., abs(row['before_residual_sec']) - remaining)
-                precise += improvement * weight / (1 + remaining * settings.analysis_rate)
-                gain += improvement * weight
-            return precise, gain
-        best = (fine, holdouts, measurements, settings)
-        best_value = value(holdouts, settings.anchor_step) if not same_map(base, fine) else (0., 0.)
-        steps = [settings.anchor_step]
-        # Refine temporal sampling when a curved local residual survives the
-        # first pass. Recompute estimates and independent windows at each step.
-        for step in (2., 1., .5, .25):
-            if step >= settings.anchor_step:
+        if resume_report is None:
+            fine, holdouts, measurements, settings, audit, verification_schedules = _analyze_candidate(
+                reference, baseline, base, settings, report, progress)
+        else:
+            fine = TimeMap.from_dict(resume_report['fine_map'])
+            if abs(fine.pieces[-1].target[-1] - duration) > 1/settings.analysis_rate:
+                raise ValueError('Длительность сохранённой карты не совпадает с PCM.')
+            settings = replace(settings, anchor_step=float(resume_report['selected_step_sec']),
+                               max_rate_change=.08 if resume_report.get('local_zoom_applied') else .02)
+            fine.validate(settings.max_rate_change)
+            measurements = [Measurement(**m) for m in resume_report['measurements']]
+            holdouts = resume_report['independent_windows'] + resume_report.get('anchor_validation_windows', [])
+            schedules = {}
+            for row in resume_report.get('actual_output_windows', []):
+                step = float(row.get('analysis_step_sec', settings.anchor_step))
+                schedules.setdefault(step, set()).add(float(row['target_time']))
+            if not schedules:
+                schedules[settings.anchor_step] = {m.target_time for m in measurements} | {r['target_time'] for r in holdouts}
+            verification_schedules = [(replace(settings, anchor_step=step), sorted(times))
+                                      for step, times in schedules.items()]
+            audit = report['audit']
+            report.update(measurements=[m.to_dict() for m in measurements],
+                          independent_windows=resume_report['independent_windows'],
+                          anchor_validation_windows=resume_report.get('anchor_validation_windows', []),
+                          selected_step_sec=settings.anchor_step, analysis_steps_sec=[],
+                          resumed_candidate=True, previous_status=resume_report['status'])
+        # Verify the EXACT waveform and acceptance rules that will be used on
+        # the decoded WAV before spending time rendering every audio channel.
+        # Reuse unchanged probes when local cancellation changes only a splice.
+        preflight_cache, baseline_cache = {}, {}
+        original_candidate = fine
+        original_bad = []
+        for attempt in range(4):
+            if attempt:
+                strategy = ('local', 'clock_rate', 'whole_component')[attempt-1]
+                fine, removed = cancel_unsafe_components(base, original_candidate,
+                    [r['target_time'] for r in original_bad], settings.max_rate_change,
+                    whole_components=attempt == 3,
+                    rollback_rate=settings.max_rate_change if attempt == 1 else .001)
+                audit.append({'status': 'PREFLIGHT_LOCAL_CANCEL', 'attempt': attempt,
+                              'strategy': strategy, 'failed_windows': original_bad,
+                              'removed_components': removed})
+            if same_map(base, fine):
+                if not original_bad:
+                    break
                 continue
-            evidence = holdouts if holdouts else audit
-            needs_dense = any(r.get('before_residual_sec') is not None
-                              and abs(r.get('after_residual_sec') or 0.) > 2 / settings.analysis_rate
-                              and abs(r['before_residual_sec']) > .0005 for r in evidence)
-            needs_dense = needs_dense or sum(
-                m.status == 'MEASURED' and abs(m.correction_sec) > .0005
-                and abs(float(fine.forward([m.target_time])[0] - m.target_time)) < .9 * abs(m.correction_sec)
-                for m in measurements) >= 3
-            if not needs_dense:
+            callback = progress(f'ПРОВЕРКА PCM ПЕРЕД ЗАПИСЬЮ — {attempt+1}/4')
+            predicted = []
+            for schedule, probes in verification_schedules:
+                rows = verify_candidate_pcm(reference, baseline, base, fine, schedule,
+                    progress=callback, target_times=probes, row_cache=preflight_cache,
+                    baseline_cache=baseline_cache)
+                predicted += [{**r, 'analysis_step_sec': schedule.anchor_step} for r in rows]
+            callback.finish()
+            report['preflight_windows'] = predicted
+            preflight_verdict = render_verdict(predicted)
+            if preflight_verdict == 'VERIFIED_PCM':
                 break
-            settings = replace(settings, anchor_step=step)
-            steps.append(step)
-            callback = _ProgressCallback('УТОЧНЕНИЕ УЧАСТКОВ С МЕНЯЮЩИМСЯ ОСТАТОЧНЫМ СДВИГОМ')
-            measurements = collect(reference, baseline, base, settings, log=lambda _: None, progress=callback)
-            callback.finish()
-            callback = _ProgressCallback('НЕЗАВИСИМАЯ ПРОВЕРКА УТОЧНЁННОЙ СЕТКИ PCM')
-            fine, holdouts, next_audit = gate_micro(reference, baseline, base, measurements,
-                                                   settings, log=lambda _: None, progress=callback)
-            callback.finish()
-            audit += next_audit
-            score = value(holdouts, settings.anchor_step) if not same_map(base, fine) else (0., 0.)
-            if score > best_value:
-                best = (fine, holdouts, measurements, settings)
-                best_value = score
-        fine, holdouts, measurements, settings = best
-        verification_schedules = [(settings, None)]
-        # Zoom only on unresolved, measurable regions. The already verified
-        # map is the baseline; a failed zoom cannot discard it or affect other
-        # parts of the movie. Extra speed changes require stronger PCM proof.
-        hotspots = [r['target_time'] for r in holdouts if r.get('after_residual_sec') is not None
-                    and abs(r['after_residual_sec']) > .00005
-                    and r.get('before_residual_sec') is not None
-                    and abs(r['before_residual_sec']) > .0001]
-        zones = []
-        for t in sorted(hotspots):
-            lo, hi = max(.25, t - 1.5), min(duration - .25, t + 1.5)
-            if zones and lo <= zones[-1][1]:
-                zones[-1] = (zones[-1][0], max(hi, zones[-1][1]))
-            else:
-                zones.append((lo, hi))
-        if zones:
-            zoom = replace(settings, anchor_step=.125, max_rate_change=.08)
-            centers, probes, barriers = [], [], []
-            for lo, hi in zones:
-                values = np.arange(lo + zoom.anchor_step / 2, hi, zoom.anchor_step)
-                centers.extend(values.tolist())
-                probes.extend(np.arange(lo, hi + 1e-9, zoom.anchor_step / 2).tolist())
-                barriers += [Measurement(lo, float(fine.forward([lo])[0]), None, method='analysis-boundary'),
-                             Measurement(hi, float(fine.forward([hi])[0]), None, method='analysis-boundary')]
-            callback = _ProgressCallback('ТОЧЕЧНОЕ УТОЧНЕНИЕ ОСТАВШИХСЯ ПЕРЕХОДОВ')
-            local_rows = collect(reference, baseline, fine, zoom, log=lambda _: None,
-                                 progress=callback, centers=centers)
-            callback.finish()
-            local_rows = sorted([*local_rows, *barriers], key=lambda m: m.target_time)
-            callback = _ProgressCallback('НЕЗАВИСИМАЯ ПРОВЕРКА ТОЧЕЧНЫХ ПОПРАВОК')
-            candidate, zoom_rows, zoom_audit = gate_micro(
-                reference, baseline, fine, local_rows, zoom, log=lambda _: None,
-                progress=callback, probe_times=probes, strong_fast=True)
-            callback.finish()
-            audit.extend(zoom_audit)
-            report['local_zones'] = zones
-            report['local_measurements'] = [m.to_dict() for m in local_rows]
-            if not same_map(fine, candidate):
-                fine = candidate
-                verification_schedules.append((zoom, probes))
-                settings = zoom
-                holdouts += zoom_rows
-                report['local_zoom_applied'] = True
-        report['selected_step_sec'] = settings.anchor_step
-        report['analysis_steps_sec'] = steps
-        report['measurements'] = [m.to_dict() for m in measurements]
-        report.update(independent_windows=[r for r in holdouts if r.get('probe_kind') != 'anchor'],
-                      anchor_validation_windows=[r for r in holdouts if r.get('probe_kind') == 'anchor'],
-                      audit=audit, fine_map=fine.to_dict())
+            bad = [r for r in predicted if r['status'] in {'REGRESSION', 'RESIDUAL_TOO_LARGE'}
+                   or (r['micro_changed'] and r['status'] == 'UNVERIFIABLE')]
+            if not bad or attempt == 3:
+                fine = base
+                break
+            if attempt == 0:
+                original_bad = bad
+            # Every alternative starts from the original curve and original
+            # failures. Never propagate defects introduced by a failed taper
+            # into distant previously verified regions.
+        report['fine_map'] = fine.to_dict()
         if same_map(base, fine):
             report['reason'] = 'Надёжное улучшение не подтверждено; основной результат сохранён.'
         else:
@@ -316,8 +404,8 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
             # components. Every retry starts from the ORIGINAL baseline, then
             # checks the decoded WAV at ALL previously selected probe times.
             for attempt in range(3):
-                decoding = _ProgressCallback('ДЕКОДИРОВАНИЕ ВСЕХ КАНАЛОВ ДЛЯ МИКРОУТОЧНЕНИЯ', seconds=True)
-                rendering = _ProgressCallback('ПРИМЕНЕНИЕ ПОДТВЕРЖДЁННЫХ МИКРОПОПРАВОК', seconds=True)
+                decoding = progress('ДЕКОДИРОВАНИЕ ВСЕХ КАНАЛОВ ДЛЯ МИКРОУТОЧНЕНИЯ', seconds=True)
+                rendering = progress('ПРИМЕНЕНИЕ ПОДТВЕРЖДЁННЫХ МИКРОПОПРАВОК', seconds=True)
                 candidate_path = render(info, fine, output_duration, fine_dir, settings, log=lambda _: None,
                                         progress=rendering, decode_progress=decoding)
                 rendering.finish()
@@ -326,12 +414,12 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
                         or candidate_info.sample_rate != selected.target.sample_rate
                         or abs(candidate_info.duration - output_duration) > 1 / selected.target.sample_rate):
                     raise RuntimeError('Микроуточнение изменило формат или длительность дорожки.')
-                callback = _ProgressCallback('ПРОВЕРКА PCM ГОТОВОГО ФАЙЛА', seconds=True)
+                callback = progress('ПРОВЕРКА PCM ГОТОВОГО ФАЙЛА', seconds=True)
                 actual = decode(candidate_info, fine_dir / 'candidate_first.f32',
                                 sample_rate=settings.analysis_rate, first_channel=True, progress=callback)
                 callback.finish()
                 # Correlation is scale independent: baseline S16 vs float WAV.
-                callback = _ProgressCallback('СРАВНЕНИЕ ГОТОВОГО ФАЙЛА С ОСНОВНЫМ РЕЗУЛЬТАТОМ')
+                callback = progress('СРАВНЕНИЕ ГОТОВОГО ФАЙЛА С ОСНОВНЫМ РЕЗУЛЬТАТОМ')
                 actual_rows = []
                 for schedule, probes in verification_schedules:
                     checked = verify_render(reference, baseline, actual, base, fine, schedule,
@@ -418,6 +506,7 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
         _plot(output_dir, measurements, holdouts, actual_rows)
     report['remaining_windows'] = [r for r in actual_rows if r['status'] == 'VERIFIED'
                                    and r['residual_sec'] is not None and abs(r['residual_sec']) > .0001]
+    report['elapsed_sec'] = time.monotonic()-started
     (output_dir / 'PCM_MICRO_REPORT.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
     improved = [r for r in actual_rows if r['micro_changed'] and r['status'] == 'VERIFIED']
     text = ['МИКРОУТОЧНЕНИЕ ПО PCM-ОТСЧЁТАМ', '=' * 78, '', report['reason'],

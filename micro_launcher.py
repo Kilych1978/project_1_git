@@ -54,7 +54,7 @@ def main():
                                'pcm_fallback': False, 'container': target.format_name}}
     final_map, result, report = refine_rendered_audio(
         selected, analysis, zero, baseline, output,
-        Settings(anchor_step=.5, min_improvement=1 / 48000, max_rate_change=.02))
+        Settings(anchor_step=1., min_improvement=1 / 48000, max_rate_change=.02))
 
     print()
     print('ШАГ 4/4')

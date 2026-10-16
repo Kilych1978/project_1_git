@@ -1003,7 +1003,9 @@ def main():
         "final_render_duration_check": bool(final_verification["duration_ok"]),
         "final_render_duration_diagnostics": final_verification.get("duration_diagnostics", {}),
         "final_effectiveness_report": str(final_effectiveness_report),
-        "audio_rendered": True,
+        "audio_rendered": not bool(render_result.get('copied_without_reencode', False)),
+        "result_status": pcm_report['status'] if pcm_report['status']=='PCM_REFINED' else (
+            'BASELINE_KEPT' if render_result.get('copied_without_reencode') else 'COARSE_REFINED'),
         "generated_by": Path(sys.argv[0]).name,
         "algorithm": "confidence-aware nonlinear waveform map + dense safety + render-aware non-regression",
     }

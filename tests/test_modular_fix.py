@@ -12,7 +12,7 @@ import numpy as np
 
 from common import Progress, SelectedTracks
 from pcm_core.config import Settings
-from pcm_core.guard import render_verdict, verify_render, cancel_unsafe_components
+from pcm_core.guard import render_verdict, verify_render, cancel_unsafe_components, verify_candidate_pcm
 from pcm_core.model import TimeMap
 from pcm_core.model import Piece
 from pcm_core.micro import Measurement, measure, refined_map
@@ -24,22 +24,88 @@ from safety import _build_interval_gate
 from applier import build_apply_map, validate_apply_map_limits
 from mapper import build_final_sync_map
 from micro_refiner import refine_sync_map_with_micro_waveform
-from .helpers import SR, soundtrack, write_audio
+from .helpers import SR, soundtrack, write_audio, warp
 
 
 class ModularFixTests(unittest.TestCase):
+    def test_real_failed_clock_cancellation_keeps_valid_rate(self):
+        f = json.loads((Path(__file__).parent/'fixtures/cancel_rate_20261016.json').read_text())
+        t, delta = np.array(f['target']), np.array(f['delta'])
+        candidate = TimeMap([Piece(t, t+delta, [{'target': t.tolist(), 'delta': delta.tolist()}])])
+        base = TimeMap.affine(t[-1])
+        candidate.validate(.02)
+        corrected, cancelled = cancel_unsafe_components(base, candidate, f['failed_times'], .02)
+        corrected.validate(.02)
+        self.assertTrue(cancelled)
+        self.assertTrue(np.any(np.abs(corrected.forward(t)-t)>1/SR))
+        for failed in f['failed_times']:
+            points=np.array([failed-.125,failed,failed+.125])
+            points=points[(points>=0)&(points<=t[-1])]
+            np.testing.assert_allclose(corrected.forward(points),points,atol=1e-10)
+        fallback, events = cancel_unsafe_components(base,candidate,f['failed_times'],.02,whole_components=True)
+        fallback.validate(.02)
+        self.assertTrue(any(r.get('mode')=='whole_component_rate_fallback' for r in events))
+
+    def test_preview_rejects_worse_timing_before_any_multichannel_render(self):
+        x = soundtrack(14., 812)
+        n = round(.006*SR)
+        y = np.r_[np.zeros(n), x[:-n]]
+        base = TimeMap.affine(14.)
+        wrong = TimeMap.affine(14., offset=.006)
+        rows = verify_candidate_pcm(x, y, base, wrong, Settings(anchor_step=1.))
+        self.assertEqual(render_verdict(rows), 'REJECTED')
+        good = TimeMap.affine(14., offset=-.006)
+        rows = verify_candidate_pcm(x, y, base, good, Settings(anchor_step=1.))
+        self.assertEqual(render_verdict(rows), 'VERIFIED_PCM')
+
+    def test_saved_run_resumes_without_repeating_map_analysis(self):
+        from resume_launcher import resume
+        from scanner import save_initial_metadata
+        import shutil
+        x = soundtrack(14., 987)
+        y = np.r_[np.zeros(round(.006*SR)), x[:-round(.006*SR)]]
+        with tempfile.TemporaryDirectory() as td:
+            directory = Path(td)
+            _, _, report, previous = self.run_fine(directory, x, y, channels=6)
+            self.assertEqual(report['status'], 'PCM_REFINED')
+            report['status'] = 'BASELINE_KEPT_ERROR'
+            (previous/'PCM_MICRO_REPORT.json').write_text(json.dumps(report))
+            selected = SelectedTracks(probe_audio_file(directory/'эталон.wav'),probe_audio_file(directory/'перевод.wav'))
+            save_initial_metadata(previous, selected)
+            analysis_info = {'analysis_sample_rate': SR, 'pcm_format': 's16le'}
+            for role,name in [('reference','ref.pcm'),('target','target.pcm')]:
+                p=previous/f'{role}_first_channel_s16le.pcm'
+                shutil.copyfile(directory/name, p)
+                analysis_info[f'{role}_decode'] = {'path':str(p),'size_bytes':p.stat().st_size,'duration':14.}
+            (previous/'analysis_info.json').write_text(json.dumps(analysis_info))
+            (previous/'FINAL_SYNC_MAP.json').write_text(json.dumps({'coarse_map_before_pcm':{
+                'target_time':[0.,14.],'reference_time':[0.,14.],'offset':[0.,0.]}}))
+            old_hash=hashlib.sha256((previous/'PCM_MICRO_REPORT.json').read_bytes()).hexdigest()
+            with patch('pcm_refiner._analyze_candidate',side_effect=AssertionError('analysis repeated')), \
+                 patch('builtins.input',return_value='y'), contextlib.redirect_stdout(io.StringIO()):
+                result=resume(previous)
+            self.assertEqual(result['pcm_micro_refinement']['status'],'PCM_REFINED')
+            self.assertTrue(result['pcm_micro_refinement']['resumed_candidate'])
+            self.assertEqual(result['pcm_micro_refinement']['analysis_steps_sec'],[])
+            self.assertEqual(hashlib.sha256((previous/'PCM_MICRO_REPORT.json').read_bytes()).hexdigest(),old_hash)
+            self.assertEqual(probe_audio_file(Path(result['output_file'])).channels,6)
+
     def test_decoded_failure_removes_only_its_component_and_rerenders_baseline(self):
         x = soundtrack(14., 921)
-        n = round(.006 * SR)
-        y = np.r_[np.zeros(n), x[:-n]]
+        from scipy.signal import butter, sosfiltfilt
+        x = sosfiltfilt(butter(3, 1000, fs=SR, output='sos'), x).astype(np.float32)
         knots = np.array([0., 1., 5., 6., 8., 9., 13., 14.])
         delta = np.array([0., -.006, -.006, 0., 0., -.006, -.006, 0.])
         mapping = TimeMap([Piece(knots, knots + delta,
                                 [{'target': knots.tolist(), 'delta': delta.tolist()}])])
+        # The source really has these two independent clock curves. A constant
+        # delay with artificial map tapers is already wrong at both boundaries
+        # and cannot be used to test preservation of a VERIFIED component.
+        y = warp(x, mapping.forward(np.arange(len(x))/SR)*SR)
         reduced, removed = cancel_unsafe_components(TimeMap.affine(14.), mapping, [10.])
         np.testing.assert_array_equal(reduced.forward(np.linspace(0., 6., 101)),
                                       mapping.forward(np.linspace(0., 6., 101)))
-        np.testing.assert_allclose(reduced.forward([9., 10., 13.]), [8.994, 10., 12.994], atol=1e-12)
+        np.testing.assert_allclose(reduced.forward([10.]), [10.], atol=1e-12)
         self.assertEqual(len(removed), 1)
         checks = [{'target_time': t, 'status': 'IMPROVED', 'change_sec': -.006,
                    'before_residual_sec': -.006, 'after_residual_sec': 0.,

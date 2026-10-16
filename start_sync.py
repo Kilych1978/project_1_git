@@ -17,12 +17,17 @@ if __name__ == "__main__":
             from micro_launcher import main as micro_main
             find_tools()
             micro_main()
+        elif sys.argv[1:2] == ['--resume'] and len(sys.argv) in (2, 3):
+            from pcm_core.audio import find_tools
+            from resume_launcher import main as resume_main
+            find_tools()
+            resume_main(sys.argv[2] if len(sys.argv) == 3 else None)
         elif len(sys.argv) == 1:
             from pcm_core.audio import find_tools
             find_tools()
             main()
         else:
-            raise ValueError('Запуск: start_sync.py; микроуточнение: --micro-only; проверка установки: --check.')
+            raise ValueError('Запуск: start_sync.py; микроуточнение: --micro-only; продолжение: --resume [папка]; проверка: --check.')
     except KeyboardInterrupt:
         print()
         print()

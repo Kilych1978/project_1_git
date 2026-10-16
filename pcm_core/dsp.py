@@ -97,10 +97,13 @@ def mapped_window(source, mapping, ref_center, length, sample_rate, radius=16):
     # Round the REFERENCE start once. Returned start makes sample rounding explicit.
     start = int(round(ref_center * sample_rate - length / 2))
     ref_times = (start + np.arange(length)) / sample_rate
-    positions = mapping.inverse(ref_times) * sample_rate
+    if hasattr(mapping, 'inverse_with_rate'):
+        source_times, step = mapping.inverse_with_rate(ref_times)
+    else:
+        source_times, step = mapping.inverse(ref_times), mapping.inverse_rate(ref_times)
+    positions = source_times * sample_rate
     finite = np.isfinite(positions)
     if not finite.all():
         return None, start
-    step = mapping.inverse_rate(ref_times)
     cutoff = np.minimum(1., 1. / np.maximum(step, 1.))
     return sinc_sample(source, positions, radius, cutoff), start
