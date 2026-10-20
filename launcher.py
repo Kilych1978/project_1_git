@@ -694,7 +694,7 @@ def main():
                       'extension': '.wav', 'pcm_fallback': True,
                       'reason': 'Исправление времени без повторного кодирования с потерями: PCM WAV/RF64.'}
     print('После основного рендера: независимая проверка остаточного сдвига по PCM.')
-    print('Подтверждённое микроуточнение будет сохранено в WAV/RF64 без потерь при кодировании.')
+    print('При PCM-уточнении сохраняются число каналов, частота и исходная разрядность PCM.')
 
     print()
     print("Защита от ухудшения сохраняет хорошие участки без необоснованной повторной коррекции.")
@@ -1053,6 +1053,15 @@ def main():
     print("Final sync median residual:", final_verification["metrics"].get("after_median_error"))
     print("Final sync mean residual  :", final_verification["metrics"].get("after_mean_error"))
     print("Final sync max residual   :", final_verification["metrics"].get("after_max_error"))
+    print()
+    print("PCM-уточнение:", pcm_report['reason'])
+    checked_pcm = [r for r in pcm_report.get('actual_output_windows', [])
+                   if r['status'] == 'VERIFIED' and r['micro_changed']]
+    if checked_pcm and pcm_report['status'] == 'PCM_REFINED':
+        residuals = np.array([abs(r['residual_sec']) for r in checked_pcm])*1000
+        print(f"Остаток PCM в проверенных изменённых окнах: медиана {np.median(residuals):.6f} мс; максимум {np.max(residuals):.6f} мс")
+        print("Проверенных окон с остатком больше 0,1 мс:",len(pcm_report.get('remaining_windows', [])))
+        print("Оставшиеся расхождения: PCM_MICRO_REMAINING.csv (если такие окна есть).")
     print()
     print("Исходный TARGET НЕ изменён.")
     if render_result.get('copied_without_reencode'):

@@ -57,6 +57,12 @@ def main():
     assert fine['status'] == 'PCM_REFINED', fine.get('reason')
     assert report['output_duration'] > 239.9
     assert report['final_render_duration_check']
+    from scanner import probe_audio_file
+    output = Path(report['output_file'])
+    assert probe_audio_file(output).codec_name == 'pcm_s16le', 'S16 input must stay S16'
+    with output.open('rb') as file:
+        assert file.read(4) == b'RIFF', 'This S16 file fits the ordinary WAV container'
+    assert output.stat().st_size <= tp.stat().st_size+2048, 'PCM output must not double its size'
     verified = [r for r in fine['actual_output_windows'] if r['micro_changed'] and r['status'] == 'VERIFIED']
     assert len(verified) > 20
     residual = np.median([abs(r['residual_sec']) for r in verified])

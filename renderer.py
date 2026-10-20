@@ -613,6 +613,14 @@ def render_target_with_sync_map(
     if not output_path.exists() or output_path.stat().st_size <= 0:
         raise RuntimeError("ffmpeg не создал корректный render output.")
 
+    if encoder.lower().startswith('pcm_') and output_path.suffix.lower() in {'.wav', '.wave'}:
+        from pcm_core.wav import finalize_wave
+        written = probe_audio_file(output_path)
+        if written is None or written.duration <= 0:
+            raise RuntimeError('Не удалось проверить заголовок записанного WAV.')
+        finalize_wave(output_path, round(written.duration*written.sample_rate),
+                      written.sample_rate, written.channels)
+
     elapsed = time.time() - started
     progress.done(100.0, f"Render завершён: {output_path.name}")
 
@@ -810,6 +818,7 @@ def verify_rendered_sync(
     output_path: Path,
     output_dir: Path,
     validation_interval_sec: float = 60.0,
+    progress: Progress | None = None,
 ):
     """
     Финальная независимая проверка уже готового файла.
@@ -845,7 +854,7 @@ def verify_rendered_sync(
     temp_dir.mkdir(exist_ok=True)
     temp_pcm = temp_dir / "rendered_first_channel_s16le.pcm"
 
-    progress = Progress()
+    progress = progress or Progress()
     decoded = decode_first_channel_stream(
         verify_info,
         temp_pcm,
@@ -874,7 +883,7 @@ def verify_rendered_sync(
             verify_analysis,
             zero_map,
             duration,
-            Progress(),
+            progress,
             validation_interval_sec=float(validation_interval_sec),
         )
     else:

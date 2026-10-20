@@ -477,6 +477,13 @@ def run_render_aware_safety_loop(
     guard_root.mkdir(parents=True, exist_ok=True)
 
     for pass_index in range(1, RENDER_GUARD_MAX_PASSES + 1):
+        context = f"РЕНДЕР: ПРОХОД {pass_index}/{RENDER_GUARD_MAX_PASSES}"
+        print()
+        print("=" * 78)
+        print(context)
+        print("Проверяется вся дорожка; после отказов отменяются локальные поправки.")
+        print(f"Участков карантина перед проходом: {len(quarantine_times)}")
+        print("=" * 78)
         pass_dir = guard_root / f"pass_{pass_index}"
         pass_dir.mkdir(parents=True, exist_ok=True)
 
@@ -485,7 +492,7 @@ def run_render_aware_safety_loop(
             candidate_map,
             dense_candidate_validation_results,
             selected.target.duration,
-            Progress(),
+            Progress(context),
             quarantine_times=quarantine_times,
             quarantine_radius_sec=RENDER_GUARD_QUARANTINE_RADIUS_SEC,
         )
@@ -511,13 +518,13 @@ def run_render_aware_safety_loop(
             apply_map = build_apply_map(
                 current_safe_map,
                 selected.target.duration,
-                Progress(),
+                Progress(context),
             )
             render_result = render_target_with_sync_map(
                 selected,
                 apply_map,
                 pass_dir,
-                Progress(),
+                Progress(context),
                 codec_plan=codec_plan,
             )
 
@@ -528,6 +535,7 @@ def run_render_aware_safety_loop(
             rendered_path,
             pass_dir,
             validation_interval_sec=RENDER_GUARD_DENSE_VALIDATION_INTERVAL_SEC,
+            progress=Progress(context),
         )
         render_result["verified_first_channel_pcm"] = verification["rendered_first_channel_pcm"]
 
@@ -604,9 +612,13 @@ def run_render_aware_safety_loop(
         final_safe_map = current_safe_map
 
         if comparison["passed"]:
+            print(f"\n{context}: проверка пройдена.")
             break
 
         bad_times = [row["target_time_sec"] for row in comparison["regressions"]]
+        print(f"\n{context}: выявлено ухудшений — {len(bad_times)}.")
+        preview = ", ".join(format_seconds(t) for t in bad_times[:12])
+        print("Проблемные моменты: " + preview + (" …" if len(bad_times) > 12 else ""))
         new_times = []
         for bad_time in bad_times:
             if not any(
@@ -635,6 +647,8 @@ def run_render_aware_safety_loop(
 
     passed = bool(final_comparison and final_comparison["passed"])
     if not passed:
+        print("\nРЕНДЕР: ПРОВЕРКА ИСХОДНОЙ ДОРОЖКИ ПОСЛЕ ОТМЕНЫ ОСНОВНОЙ КАРТЫ")
+        print("Далее PCM-уточнение сможет независимо исправить остаточные сдвиги.")
         # Last safety net: exact original TARGET copy.
         fallback_dir = guard_root / "fallback_baseline"
         fallback_dir.mkdir(parents=True, exist_ok=True)
@@ -650,6 +664,7 @@ def run_render_aware_safety_loop(
             final_render["output_path"],
             fallback_dir,
             validation_interval_sec=RENDER_GUARD_DENSE_VALIDATION_INTERVAL_SEC,
+            progress=Progress("РЕНДЕР: ИСХОДНАЯ ДОРОЖКА"),
         )
         final_render["verified_first_channel_pcm"] = final_verification["rendered_first_channel_pcm"]
         final_comparison = compare_rendered_against_original(

@@ -1,0 +1,18 @@
+test_rejected_optional_zoom_keeps_main_pcm_candidate (tests.test_modular_fix.ModularFixTests.test_rejected_optional_zoom_keeps_main_pcm_candidate) ... ok
+test_bounded_gate_keeps_independent_good_curve_after_eight_failures (tests.test_pcm_recovery.PCMRecoveryTests.test_bounded_gate_keeps_independent_good_curve_after_eight_failures) ... ok
+test_consistent_clock_bridges_one_ambiguous_anchor_without_claiming_a_measurement (tests.test_pcm_recovery.PCMRecoveryTests.test_consistent_clock_bridges_one_ambiguous_anchor_without_claiming_a_measurement) ... ok
+test_rf64_fact_uses_actual_frames_instead_of_24_hour_sentinel (tests.test_pcm_recovery.PCMRecoveryTests.test_rf64_fact_uses_actual_frames_instead_of_24_hour_sentinel) ... ok
+test_s16_six_channel_render_keeps_precision_size_and_riff_timing (tests.test_pcm_recovery.PCMRecoveryTests.test_s16_six_channel_render_keeps_precision_size_and_riff_timing) ... ok
+test_zoom_rollback_preserves_verified_base_curve (tests.test_pcm_recovery.PCMRecoveryTests.test_zoom_rollback_preserves_verified_base_curve) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 3.537s
+
+OK
+
+test_main_pcm_fallback_cannot_hide_a_known_dense_grid_regression (tests.test_modular_fix.ModularFixTests.test_main_pcm_fallback_cannot_hide_a_known_dense_grid_regression) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 1.449s
+
+OK

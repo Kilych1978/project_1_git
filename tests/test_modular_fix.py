@@ -175,6 +175,41 @@ class ModularFixTests(unittest.TestCase):
             self.assertEqual(probe_audio_file(Path(report['output_file'])).channels, 6)
             self.assertEqual([hashlib.sha256(p.read_bytes()).hexdigest() for p in (rp, tp)], before)
 
+    def test_rejected_optional_zoom_keeps_main_pcm_candidate(self):
+        x = soundtrack(14., 987)
+        y = np.r_[np.zeros(round(.006*SR)),x[:-round(.006*SR)]]
+        checks = [{'target_time':t,'status':'IMPROVED','change_sec':-.006,
+                   'before_residual_sec':-.006,'after_residual_sec':.0002,
+                   'before_score':.98,'after_score':.99} for t in (2.,7.,12.)]
+        # The optional proposal is deliberately wrong. Real PCM preflight
+        # rejects it; the already valid primary candidate must still render.
+        proposals = [(TimeMap.affine(14.,offset=-.006),checks,[]),
+                     (TimeMap.affine(14.,offset=.006),checks,[])]
+        with tempfile.TemporaryDirectory() as td, patch('pcm_refiner.gate_micro',side_effect=proposals):
+            final,result,report,_ = self.run_fine(Path(td),x,y,
+                settings=Settings(anchor_step=1.,min_improvement=1/SR,max_rate_change=.02))
+            self.assertEqual(report['status'],'PCM_REFINED',report['reason'])
+            self.assertTrue(report['local_zoom_rejected'])
+            self.assertTrue(any(r['status']=='ZOOM_REJECTED_MAIN_PCM_KEPT' for r in report['audit']))
+            self.assertAlmostEqual(np.interp(7.,final['target_time'],final['offset']),-.006,delta=1/SR)
+
+    def test_main_pcm_fallback_cannot_hide_a_known_dense_grid_regression(self):
+        x = soundtrack(14., 711)
+        t = np.arange(len(x))/SR
+        delay = np.where(np.abs(t-7.25)<.045,0.,.006)
+        y = warp(x,(t-delay)*SR)
+        checks = [{'target_time':v,'status':'IMPROVED','change_sec':-.006,
+                   'before_residual_sec':-.006,'after_residual_sec':.0002,
+                   'before_score':.98,'after_score':.99} for v in (2.,7.,12.)]
+        proposals = [(TimeMap.affine(14.,offset=-.006),checks,[]),
+                     (TimeMap.affine(14.,offset=.006),checks,[])]
+        with tempfile.TemporaryDirectory() as td, patch('pcm_refiner.gate_micro',side_effect=proposals):
+            _,result,report,_ = self.run_fine(Path(td),x,y,
+                settings=Settings(anchor_step=1.,min_improvement=1/SR,max_rate_change=.02))
+            self.assertEqual(report['status'],'BASELINE_KEPT')
+            self.assertTrue(result['copied_without_reencode'])
+            self.assertTrue(any(r['status']=='MAIN_PCM_LOCAL_CANCEL' for r in report['audit']))
+
     def test_safety_edge_taper_does_not_create_an_impossible_render_tempo(self):
         t = np.arange(0., 241., 1.)
         checks = np.arange(18., 219., 10.)

@@ -1,9 +1,10 @@
-"""One multichannel lossless render; partial files are never labeled SYNCED."""
+"""Multichannel render at source PCM precision; partial files never become SYNCED."""
 import subprocess
 import time
 import numpy as np
 from .audio import check_disk, decode
 from .dsp import sinc_sample
+from .wav import output_codec, finalize_wave
 
 
 def render(info, mapping, reference_duration, directory, settings, log=print, progress=None, decode_progress=None):
@@ -12,10 +13,12 @@ def render(info, mapping, reference_duration, directory, settings, log=print, pr
     destination = directory / "CANDIDATE_TARGET.wav"
     sr = info.sample_rate
     channels = info.channels
-    # Float WAV avoids clipping/bit-depth reduction of decoded or interpolated PCM.
-    # It is lossless with respect to the float32 pipeline, not a copy of codec bits.
+    codec = output_codec(info)
+    bytes_per_sample = {'pcm_s16le': 2, 'pcm_s24le': 3, 'pcm_s32le': 4,
+                        'pcm_f32le': 4, 'pcm_f64le': 8}[codec]
     frames = round(reference_duration * sr)
-    check_disk(directory, int((info.duration * sr * channels + frames * channels) * 4 * 1.1) + 64 * 2**20)
+    check_disk(directory, int((info.duration * sr * channels * 4
+                              + frames * channels * bytes_per_sample) * 1.1) + 64 * 2**20)
     source = None
     process = None
     started = time.monotonic()
@@ -26,7 +29,7 @@ def render(info, mapping, reference_duration, directory, settings, log=print, pr
         layout = ["-channel_layout", info.channel_layout] if info.channel_layout else []
         command = ["ffmpeg", "-hide_banner", "-nostdin", "-v", "error", "-n",
                    "-f", "f32le", "-ar", str(sr), "-ac", str(channels), *layout,
-                   "-i", "pipe:0", "-map", "0:a:0", "-c:a", "pcm_f32le", "-rf64", "auto", str(destination)]
+                   "-i", "pipe:0", "-map", "0:a:0", "-c:a", codec, "-rf64", "auto", str(destination)]
         # A file for stderr avoids a deadlock if FFmpeg reports more than a pipe buffer.
         with (directory / "ffmpeg_render.log").open("wb") as errors:
             process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=errors)
@@ -50,6 +53,7 @@ def render(info, mapping, reference_duration, directory, settings, log=print, pr
                 process.stdin.close()
                 if process.wait() != 0:
                     raise RuntimeError("Ошибка кодирования FFmpeg. См. ffmpeg_render.log.")
+                finalize_wave(destination, frames, sr, channels)
             except BaseException:
                 if process.stdin and not process.stdin.closed:
                     process.stdin.close()

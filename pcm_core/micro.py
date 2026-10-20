@@ -1,10 +1,16 @@
 """PCM estimates on warped audio, disjoint subwindows, explicit polarity/ambiguity gates."""
 from dataclasses import asdict, dataclass
+from functools import lru_cache
 import numpy as np
 from scipy.interpolate import PchipInterpolator
 from scipy.signal import butter, sosfiltfilt
 from .dsp import mapped_window, ncc_valid, peak
 from .model import Piece, TimeMap
+
+
+@lru_cache(maxsize=24)
+def _bandpass(sample_rate, low_hz, high_hz):
+    return butter(3, [low_hz, high_hz], btype='bandpass', fs=sample_rate, output='sos')
 
 
 @dataclass
@@ -72,7 +78,7 @@ def measure_window(reference, target, mapping, target_time, settings, radius=Non
     if found["score"] < settings.min_raw_score or found["margin"] < settings.min_raw_margin:
         bands = []
         for low_hz, high_hz in ((200, 1500), (1500, 4500), (4500, 12000)):
-            filt = butter(3, [low_hz, high_hz], btype="bandpass", fs=sr, output="sos")
+            filt = _bandpass(sr, low_hz, high_hz)
             filtered_search = sosfiltfilt(filt, search)
             filtered_template = sosfiltfilt(filt, warped)
             bc = ncc_valid(filtered_search, filtered_template)
@@ -208,6 +214,37 @@ def refined_map(base, measurements, settings, enabled_times=None, audit=None):
     output = []
     for piece in base.pieces:
         rows = [m for m in measurements if piece.target[0] <= m.target_time <= piece.target[-1]]
+        # An ambiguous short window is not proof of a clock discontinuity.
+        # Bridge one missing center only when TWO measured centers on each
+        # side independently predict the same clock. All bridged PCM centers
+        # still undergo the ordinary independent/final-output gates.
+        bridged = set()
+        if len(rows) >= 5:
+            from dataclasses import replace
+            original_rows = list(rows)
+            for i in range(2, len(rows)-2):
+                m = original_rows[i]
+                neighbours = [original_rows[j] for j in (i-2, i-1, i+1, i+2)]
+                if (m.status != 'UNVERIFIABLE' or m.method == 'analysis-boundary'
+                        or any(n.status != 'MEASURED' or n.correction_sec is None
+                               or n.score < .75 or (enabled_times is not None and n.target_time not in enabled_times)
+                               for n in neighbours)):
+                    continue
+                tx = np.array([n.target_time for n in neighbours])
+                vy = np.array([n.correction_sec for n in neighbours])
+                if np.max(np.diff(np.r_[tx[:2], m.target_time, tx[2:]])) > settings.anchor_step * 1.01:
+                    continue
+                left_slope = (vy[1]-vy[0])/(tx[1]-tx[0])
+                right_slope = (vy[3]-vy[2])/(tx[3]-tx[2])
+                left = vy[1]+left_slope*(m.target_time-tx[1])
+                right = vy[2]+right_slope*(m.target_time-tx[2])
+                if (abs(left-right) <= .00005 and abs(left_slope-right_slope) <= .0001
+                        and max(abs(left_slope), abs(right_slope)) <= .003):
+                    rows[i] = replace(m, correction_sec=float((left+right)/2),
+                                      status='MEASURED', method='clock-gap-prediction')
+                    bridged.add(m.target_time)
+                    if audit is not None:
+                        audit.append({'status': 'CLOCK_GAP_PREDICTION', 'target_time': m.target_time})
         nodes = []
         run = []
         def commit():
@@ -225,7 +262,7 @@ def refined_map(base, measurements, settings, enabled_times=None, audit=None):
                     weights = np.array([m.score for m in run]) ** 2
                     slope, intercept = np.polyfit(times - times[0], vals, 1, w=weights)
                     fitted_values = slope * (times - times[0]) + intercept
-                    if np.max(np.abs(vals - fitted_values)) <= .25 / settings.analysis_rate:
+                    if np.max(np.abs(vals - fitted_values)) <= 1. / settings.analysis_rate:
                         vals = fitted_values
                         fitted = True
                 left = max(piece.target[0], times[0] - settings.anchor_step / 2)
@@ -274,7 +311,7 @@ def refined_map(base, measurements, settings, enabled_times=None, audit=None):
                                   'affine_fit': fitted, 'edge_limited': edge_limited, 'anchors': len(run)})
         for m in rows:
             active = (m.status == "MEASURED" and m.correction_sec is not None
-                      and (enabled_times is None or m.target_time in enabled_times))
+                      and (enabled_times is None or m.target_time in enabled_times or m.target_time in bridged))
             gap_ok = not run or m.target_time - run[-1].target_time <= settings.anchor_step * 1.01
             # Separate abrupt changes rather than pretending they are a
             # continuous clock-rate correction. Each side keeps its evidence.

@@ -26,7 +26,7 @@ from pcm_core.render import render
 
 
 class _ProgressCallback:
-    def __init__(self, title, seconds=False, timings=None):
+    def __init__(self, title, seconds=False, timings=None, target_times=None):
         self.progress = Progress()
         self.title = title
         self.base_title = title
@@ -34,12 +34,14 @@ class _ProgressCallback:
         self.seconds = seconds
         self.started = time.monotonic()
         self.timings = timings
+        self.target_times = target_times
         self.progress.stage(title)
 
     def begin_pass(self, index, total):
         self.title = f'{self.base_title} | проход {index}/{total}'
         self.progress = Progress()
         self.last = 0.
+        self.progress.stage(self.title)
 
     def __call__(self, done, total):
         now = time.monotonic()
@@ -52,7 +54,10 @@ class _ProgressCallback:
             self.progress.update(percent, self.title + ' | ETA ' + eta, done, total,
                                  self.progress.speed(done))
         else:
-            self.progress.update(percent, f'{self.title} | {done:.0f}/{total:.0f} точек | ETA {eta}')
+            location = ''
+            if self.target_times is not None and len(self.target_times):
+                location = ' | момент ' + format_seconds(self.target_times[min(len(self.target_times)-1, max(0, int(done)-1))])
+            self.progress.update(percent, f'{self.title} | {done:.0f}/{total:.0f} точек{location} | ETA {eta}')
         if total > 0 and done >= total:
             print()
 
@@ -239,10 +244,13 @@ def _analyze_candidate(reference, baseline, base, settings, report, progress):
             best_value = score
     fine, holdouts, measurements, settings = best
     verification_schedules = [(settings, None)]
+    # Keep a transaction-local backup. A failed optional zoom must not erase
+    # the main PCM candidate; no files or maps from previous runs are loaded.
+    primary = (fine, list(holdouts), settings, list(verification_schedules))
     # Zoom only on unresolved, measurable regions. The already verified
     # map is the baseline; a failed zoom cannot discard it or affect other
     # parts of the movie. Extra speed changes require stronger PCM proof.
-    hotspots = [r['target_time'] for r in holdouts if r['status'] == 'IMPROVED'
+    hotspots = [r['target_time'] for r in holdouts if r['status'] in {'IMPROVED', 'UNCHANGED'}
                 and r.get('after_residual_sec') is not None
                 and abs(r['after_residual_sec']) > .0001
                 and r.get('before_residual_sec') is not None
@@ -263,15 +271,17 @@ def _analyze_candidate(reference, baseline, base, settings, report, progress):
             probes.extend(np.arange(lo, hi + 1e-9, zoom.anchor_step / 2).tolist())
             barriers += [Measurement(lo, float(fine.forward([lo])[0]), None, method='analysis-boundary'),
                          Measurement(hi, float(fine.forward([hi])[0]), None, method='analysis-boundary')]
-        callback = progress('ТОЧЕЧНОЕ УТОЧНЕНИЕ ОСТАВШИХСЯ ПЕРЕХОДОВ')
+        print(f'\nЛокальное PCM-уточнение: участков {len(zones)}, суммарно {sum(hi-lo for lo, hi in zones):.1f} с.')
+        callback = progress('ТОЧЕЧНОЕ УТОЧНЕНИЕ ОСТАВШИХСЯ ПЕРЕХОДОВ', target_times=centers)
         local_rows = collect(reference, baseline, fine, zoom, log=lambda _: None,
                              progress=callback, centers=centers)
         callback.finish()
         local_rows = sorted([*local_rows, *barriers], key=lambda m: m.target_time)
-        callback = progress('НЕЗАВИСИМАЯ ПРОВЕРКА ТОЧЕЧНЫХ ПОПРАВОК')
+        callback = progress('НЕЗАВИСИМАЯ ПРОВЕРКА ТОЧЕЧНЫХ ПОПРАВОК', target_times=sorted(set(probes)))
         candidate, zoom_rows, zoom_audit = gate_micro(
             reference, baseline, fine, local_rows, zoom, log=lambda _: None,
-            progress=callback, probe_times=probes, strong_fast=True)
+            progress=callback, probe_times=probes, strong_fast=True,
+            prior_schedules=verification_schedules)
         callback.finish()
         audit.extend(zoom_audit)
         report['local_zones'] = zones
@@ -288,7 +298,8 @@ def _analyze_candidate(reference, baseline, base, settings, report, progress):
     report.update(independent_windows=[r for r in holdouts if r.get('probe_kind') != 'anchor'],
                   anchor_validation_windows=[r for r in holdouts if r.get('probe_kind') == 'anchor'],
                   audit=audit, fine_map=fine.to_dict())
-    return fine, holdouts, measurements, settings, audit, verification_schedules
+    alternative = primary if report.get('local_zoom_applied') else None
+    return fine, holdouts, measurements, settings, audit, verification_schedules, alternative
 
 
 def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_dir,
@@ -303,8 +314,8 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
               'output_file': str(baseline_path), 'sample_rate': settings.analysis_rate,
               'independent_windows': [], 'actual_output_windows': [], 'audit': [],
               'coarse_algorithm': 'original v6.9.1', 'measurements': [], 'stage_timings_sec': []}
-    def progress(title, seconds=False):
-        return _ProgressCallback(title, seconds, report['stage_timings_sec'])
+    def progress(title, seconds=False, target_times=None):
+        return _ProgressCallback(title, seconds, report['stage_timings_sec'], target_times)
     reference = baseline = actual = None
     measurements, holdouts, actual_rows = [], [], []
     candidate_path = None
@@ -327,7 +338,7 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
         base = TimeMap.affine(duration)
         report['baseline_duration'] = duration
         report['expected_output_duration'] = output_duration
-        fine, holdouts, measurements, settings, audit, verification_schedules = _analyze_candidate(
+        fine, holdouts, measurements, settings, audit, verification_schedules, alternative = _analyze_candidate(
             reference, baseline, base, settings, report, progress)
         # Verify the EXACT waveform and acceptance rules that will be used on
         # the decoded WAV before spending time rendering every audio channel.
@@ -349,14 +360,14 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
                 if not original_bad:
                     break
                 continue
-            callback = progress(f'ПРОВЕРКА PCM ПЕРЕД ЗАПИСЬЮ — {attempt+1}/4')
             predicted = []
-            for schedule, probes in verification_schedules:
+            for index, (schedule, probes) in enumerate(verification_schedules, 1):
+                callback = progress(f'ПРОВЕРКА PCM ПЕРЕД ЗАПИСЬЮ — {attempt+1}/4 | сетка {index}/{len(verification_schedules)}, шаг {schedule.anchor_step:g} с')
                 rows = verify_candidate_pcm(reference, baseline, base, fine, schedule,
                     progress=callback, target_times=probes, row_cache=preflight_cache,
                     baseline_cache=baseline_cache)
                 predicted += [{**r, 'analysis_step_sec': schedule.anchor_step} for r in rows]
-            callback.finish()
+                callback.finish()
             report['preflight_windows'] = predicted
             preflight_verdict = render_verdict(predicted)
             if preflight_verdict == 'VERIFIED_PCM':
@@ -372,18 +383,57 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
             # failures. Never propagate defects introduced by a failed taper
             # into distant previously verified regions.
         report['fine_map'] = fine.to_dict()
+        if same_map(base, fine) and alternative is not None:
+            prior_map, prior_rows, prior_settings, _ = alternative
+            # Retain ALL observed probe schedules. A failed optional proposal
+            # cannot hide a known problem by returning to a sparser check grid.
+            original_prior = prior_map
+            failed_times = set()
+            for recovery in range(7):
+                if recovery:
+                    prior_map, removed = cancel_unsafe_components(base, original_prior,
+                        sorted(failed_times), prior_settings.max_rate_change,
+                        whole_components=recovery == 6, rollback_rate=prior_settings.max_rate_change)
+                    audit.append({'status': 'MAIN_PCM_LOCAL_CANCEL', 'attempt': recovery,
+                                  'removed_components': removed})
+                if same_map(base, prior_map):
+                    break
+                checked = []
+                for index, (schedule, probes) in enumerate(verification_schedules, 1):
+                    callback = progress(f'ПРОВЕРКА ОСНОВНОЙ PCM-КАРТЫ ПОСЛЕ ОТМЕНЫ УТОЧНЕНИЯ | проход {recovery+1}/7 | сетка {index}/{len(verification_schedules)}')
+                    checked.extend({**r, 'analysis_step_sec': schedule.anchor_step} for r in
+                        verify_candidate_pcm(reference, baseline, base, prior_map, schedule,
+                            progress=callback, target_times=probes, row_cache=preflight_cache,
+                            baseline_cache=baseline_cache))
+                    callback.finish()
+                if render_verdict(checked) == 'VERIFIED_PCM':
+                    fine, holdouts, settings = prior_map, prior_rows, prior_settings
+                    report.update(local_zoom_applied=False, local_zoom_rejected=True,
+                                  selected_step_sec=settings.anchor_step, preflight_windows=checked,
+                                  fine_map=fine.to_dict(),
+                                  independent_windows=[r for r in holdouts if r.get('probe_kind') != 'anchor'],
+                                  anchor_validation_windows=[r for r in holdouts if r.get('probe_kind') == 'anchor'])
+                    audit.append({'status': 'ZOOM_REJECTED_MAIN_PCM_KEPT'})
+                    break
+                bad = [r for r in checked if r['status'] in {'REGRESSION', 'RESIDUAL_TOO_LARGE'}
+                       or (r['micro_changed'] and r['status'] == 'UNVERIFIABLE')]
+                added = {r['target_time'] for r in bad} - failed_times
+                if not added:
+                    break
+                failed_times.update(added)
         if same_map(base, fine):
             report['reason'] = 'Надёжное улучшение не подтверждено; основной результат сохранён.'
         else:
-            # Fine output is lossless float32 WAV/RF64, all channels in source order.
+            # Preserve PCM precision and source channel order in the final WAV.
             info = probe(baseline_path, selected.target.stream_index if render_result.get('copied_without_reencode') else 0)
             info.duration = duration
             # A rejected local transition must not erase independently safe
             # components. Every retry starts from the ORIGINAL baseline, then
             # checks the decoded WAV at ALL previously selected probe times.
             for attempt in range(3):
-                decoding = progress('ДЕКОДИРОВАНИЕ ВСЕХ КАНАЛОВ ДЛЯ МИКРОУТОЧНЕНИЯ', seconds=True)
-                rendering = progress('ПРИМЕНЕНИЕ ПОДТВЕРЖДЁННЫХ МИКРОПОПРАВОК', seconds=True)
+                label = f' | запись {attempt+1}/3'
+                decoding = progress('ДЕКОДИРОВАНИЕ ВСЕХ КАНАЛОВ ДЛЯ МИКРОУТОЧНЕНИЯ'+label, seconds=True)
+                rendering = progress('ПРИМЕНЕНИЕ ПОДТВЕРЖДЁННЫХ МИКРОПОПРАВОК'+label, seconds=True)
                 candidate_path = render(info, fine, output_duration, fine_dir, settings, log=lambda _: None,
                                         progress=rendering, decode_progress=decoding)
                 rendering.finish()
@@ -396,14 +446,14 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
                 actual = decode(candidate_info, fine_dir / 'candidate_first.f32',
                                 sample_rate=settings.analysis_rate, first_channel=True, progress=callback)
                 callback.finish()
-                # Correlation is scale independent: baseline S16 vs float WAV.
-                callback = progress('СРАВНЕНИЕ ГОТОВОГО ФАЙЛА С ОСНОВНЫМ РЕЗУЛЬТАТОМ')
+                # Correlation is scale independent across supported PCM formats.
                 actual_rows = []
-                for schedule, probes in verification_schedules:
+                for index, (schedule, probes) in enumerate(verification_schedules, 1):
+                    callback = progress(f'СРАВНЕНИЕ ГОТОВОГО ФАЙЛА С ОСНОВНЫМ РЕЗУЛЬТАТОМ | сетка {index}/{len(verification_schedules)}, шаг {schedule.anchor_step:g} с')
                     checked = verify_render(reference, baseline, actual, base, fine, schedule,
                                             progress=callback, target_times=probes)
                     actual_rows += [{**r, 'analysis_step_sec': schedule.anchor_step} for r in checked]
-                callback.finish()
+                    callback.finish()
                 verdict = render_verdict(actual_rows)
                 report.update(actual_output_windows=actual_rows, candidate_verdict=verdict)
                 if verdict != 'REJECTED' or attempt == 2:
@@ -432,10 +482,14 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
                 candidate_path.rename(destination)
                 candidate_path = None
                 published_candidate = destination
-                plan = {'source_codec': selected.target.codec_name, 'encoder': 'pcm_f32le',
-                        'container': 'wav', 'extension': '.wav', 'pcm_fallback': True,
-                        'reason': 'Подтверждённое PCM-микроуточнение; WAV/RF64 без потерь при кодировании.'}
-                render_result = {**render_result, 'output_path': destination, 'encoder': 'pcm_f32le',
+                encoder = candidate_info.codec
+                plan = {'source_codec': selected.target.codec_name, 'encoder': encoder,
+                        'container': 'wav', 'extension': '.wav',
+                        'pcm_fallback': not selected.target.codec_name.startswith('pcm_'),
+                        'reason': ('Подтверждённое PCM-микроуточнение; исходная разрядность PCM сохранена.'
+                                   if selected.target.codec_name.startswith('pcm_') else
+                                   'Подтверждённое PCM-микроуточнение; сжатый исходник сохранён в PCM WAV.')}
+                render_result = {**render_result, 'output_path': destination, 'encoder': encoder,
                                  'codec_plan': plan, 'copied_without_reencode': False,
                                  'coarse_output_path': baseline_path, 'pcm_refined': True}
                 # Exact two-stage maps are saved separately. Dense canonical map
@@ -466,8 +520,22 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
                 ambiguous = [m.target_time for m in measurements if m.status == 'INCONSISTENT' and m.score >= .55]
                 if len(ambiguous) > 4:
                     ambiguous = [ambiguous[i] for i in np.linspace(0, len(ambiguous) - 1, 4).astype(int)]
+                # Include measurable remaining errors, not just evenly spaced
+                # successful scenes. Keep clips separated, for useful diagnosis.
+                diagnostic_times = []
+                remaining = sorted([r for r in actual_rows if r['status'] == 'VERIFIED'
+                                    and r['residual_sec'] is not None and abs(r['residual_sec']) > .0001],
+                                   key=lambda r: abs(r['residual_sec']), reverse=True)
+                separation = max(8., min(60., len(baseline)/settings.analysis_rate/20))
+                for row in remaining:
+                    t = row['reference_time']
+                    if all(abs(t-old) >= separation for old in diagnostic_times):
+                        diagnostic_times.append(t)
+                    if len(diagnostic_times) == 4:
+                        break
+                diagnostic_times = (diagnostic_times+ambiguous)[:4]
                 final_pcm = actual if report['status'] == 'PCM_REFINED' else baseline
-                clips = export_diagnostic_clips(reference, baseline, output_dir, settings.analysis_rate, ambiguous, final=final_pcm)
+                clips = export_diagnostic_clips(reference, baseline, output_dir, settings.analysis_rate, diagnostic_times, final=final_pcm)
                 report['diagnostic_clips'] = str(clips) if clips else None
                 if make_plots and report['status'] == 'PCM_REFINED':
                     _plot_pcm_overlays(reference, baseline, actual, actual_rows, output_dir, settings.analysis_rate)
@@ -484,6 +552,15 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
         _plot(output_dir, measurements, holdouts, actual_rows)
     report['remaining_windows'] = [r for r in actual_rows if r['status'] == 'VERIFIED'
                                    and r['residual_sec'] is not None and abs(r['residual_sec']) > .0001]
+    _write_csv(output_dir / 'PCM_MICRO_REMAINING.csv', [
+        {'target_time_sec': r['target_time'], 'target_timecode': format_seconds(r['target_time']),
+         'reference_time_sec': r['reference_time'],
+         'before_ms': None if r['baseline_residual_sec'] is None else r['baseline_residual_sec']*1000,
+         'after_ms': r['residual_sec']*1000,
+         'decision': 'Остаток после частичной поправки' if r['micro_changed'] else 'Без подтверждённой поправки'}
+        for r in report['remaining_windows']])
+    if report['status'] == 'PCM_REFINED':
+        report['output_codec'] = candidate_info.codec
     report['elapsed_sec'] = time.monotonic()-started
     (output_dir / 'PCM_MICRO_REPORT.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
     improved = [r for r in actual_rows if r['micro_changed'] and r['status'] == 'VERIFIED']
@@ -491,6 +568,7 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
             f"Подтверждённых измерений: {sum(m.status == 'MEASURED' for m in measurements)} / {len(measurements)}",
             f"Независимых проверок: {len(holdouts)}", f"Проверок записанного файла: {len(actual_rows)}",
             f"Применено микроуточнение: {'да' if report['status'] == 'PCM_REFINED' else 'нет'}",
+            f"Формат результата: {report.get('output_codec', render_result.get('encoder', 'исходный'))}",
             f"Итоговый файл: {report['output_file']}", '',
             'Измерения относятся только к проверенным окнам с общим звуком.',
             'Тишина и различающийся звук не подтверждают точность синхронизации.',

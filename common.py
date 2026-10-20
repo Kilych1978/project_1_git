@@ -73,9 +73,10 @@ class Progress:
 
     """
 
-    def __init__(self):
+    def __init__(self, context=""):
         self.started = time.time()
         self.stage_started = time.time()
+        self.context = context
 
     # --------------------------------------------------------
     # Начало крупного этапа
@@ -89,7 +90,7 @@ class Progress:
 
         # Заголовок этапа — это только заголовок.
         # Процент относится к реальной операции и показывается в update()/done().
-        print(name)
+        print(f"{self.context} | {name}" if self.context else name)
         print("=" * 78)
 
     # --------------------------------------------------------
@@ -113,6 +114,9 @@ class Progress:
         )
 
         line = f"\r[{percent:6.2f}%]"
+
+        if self.context:
+            line += f" {self.context} |"
 
         if message:
             line += f" {message}"

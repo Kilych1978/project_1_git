@@ -17,6 +17,7 @@ test_error_in_fine_analysis_keeps_baseline_and_reports_reason (tests.test_modula
 test_failed_actual_render_is_discarded_without_losing_baseline (tests.test_modular_fix.ModularFixTests.test_failed_actual_render_is_discarded_without_losing_baseline) ... ok
 test_failing_finer_grid_preserves_previously_verified_candidate (tests.test_modular_fix.ModularFixTests.test_failing_finer_grid_preserves_previously_verified_candidate) ... ok
 test_identity_and_unrelated_audio_keep_baseline (tests.test_modular_fix.ModularFixTests.test_identity_and_unrelated_audio_keep_baseline) ... ok
+test_main_pcm_fallback_cannot_hide_a_known_dense_grid_regression (tests.test_modular_fix.ModularFixTests.test_main_pcm_fallback_cannot_hide_a_known_dense_grid_regression) ... ok
 test_micro_only_original_menus_create_verified_multichannel_output (tests.test_modular_fix.ModularFixTests.test_micro_only_original_menus_create_verified_multichannel_output) ... /workspace/project_1_git/analyzer.py:1124: ResourceWarning: unclosed file <_io.FileIO name=3 mode='rb' closefd=True>
   decode_first_channel_stream(
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
@@ -35,9 +36,15 @@ test_one_invalid_local_transition_keeps_other_movie_corrections (tests.test_modu
 test_pcm_copy_fallback_never_overwrites_source_or_previous_sibling (tests.test_modular_fix.ModularFixTests.test_pcm_copy_fallback_never_overwrites_source_or_previous_sibling) ... ok
 test_preview_rejects_worse_timing_before_any_multichannel_render (tests.test_modular_fix.ModularFixTests.test_preview_rejects_worse_timing_before_any_multichannel_render) ... ok
 test_real_failed_clock_cancellation_keeps_valid_rate (tests.test_modular_fix.ModularFixTests.test_real_failed_clock_cancellation_keeps_valid_rate) ... ok
+test_rejected_optional_zoom_keeps_main_pcm_candidate (tests.test_modular_fix.ModularFixTests.test_rejected_optional_zoom_keeps_main_pcm_candidate) ... ok
 test_safety_edge_taper_does_not_create_an_impossible_render_tempo (tests.test_modular_fix.ModularFixTests.test_safety_edge_taper_does_not_create_an_impossible_render_tempo) ... ok
 test_splice_center_uses_reciprocal_pcm_instead_of_false_linear_clock (tests.test_modular_fix.ModularFixTests.test_splice_center_uses_reciprocal_pcm_instead_of_false_linear_clock) ... ok
 test_user_failure_measurements_no_long_gap_global_abort (tests.test_modular_fix.ModularFixTests.test_user_failure_measurements_no_long_gap_global_abort) ... ok
+test_bounded_gate_keeps_independent_good_curve_after_eight_failures (tests.test_pcm_recovery.PCMRecoveryTests.test_bounded_gate_keeps_independent_good_curve_after_eight_failures) ... ok
+test_consistent_clock_bridges_one_ambiguous_anchor_without_claiming_a_measurement (tests.test_pcm_recovery.PCMRecoveryTests.test_consistent_clock_bridges_one_ambiguous_anchor_without_claiming_a_measurement) ... ok
+test_rf64_fact_uses_actual_frames_instead_of_24_hour_sentinel (tests.test_pcm_recovery.PCMRecoveryTests.test_rf64_fact_uses_actual_frames_instead_of_24_hour_sentinel) ... ok
+test_s16_six_channel_render_keeps_precision_size_and_riff_timing (tests.test_pcm_recovery.PCMRecoveryTests.test_s16_six_channel_render_keeps_precision_size_and_riff_timing) ... ok
+test_zoom_rollback_preserves_verified_base_curve (tests.test_pcm_recovery.PCMRecoveryTests.test_zoom_rollback_preserves_verified_base_curve) ... ok
 test_44100_hz_is_preserved_and_float_peaks_are_not_clipped (tests.test_render.RenderTests.test_44100_hz_is_preserved_and_float_peaks_are_not_clipped) ... ok
 test_6_channels_share_one_map_and_native_rate_is_preserved (tests.test_render.RenderTests.test_6_channels_share_one_map_and_native_rate_is_preserved) ... ok
 test_antialias_filter_at_compression (tests.test_render.RenderTests.test_antialias_filter_at_compression) ... ok
@@ -50,6 +57,6 @@ test_invalid_maps_and_overlapping_edits_are_rejected (tests.test_render.RenderTe
 test_out_of_range_is_silence (tests.test_render.RenderTests.test_out_of_range_is_silence) ... ok
 
 ----------------------------------------------------------------------
-Ran 38 tests in 89.223s
+Ran 45 tests in 96.668s
 
 OK
