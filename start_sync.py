@@ -17,12 +17,17 @@ if __name__ == "__main__":
             from micro_launcher import main as micro_main
             find_tools()
             micro_main()
+        elif sys.argv[1:2] == ['--diagnose-points']:
+            from pcm_core.audio import find_tools
+            from diagnose_points import main as diagnose_main
+            find_tools()
+            diagnose_main(sys.argv[2:])
         elif len(sys.argv) == 1:
             from pcm_core.audio import find_tools
             find_tools()
             main()
         else:
-            raise ValueError('Запуск: start_sync.py; микроуточнение: --micro-only; проверка: --check.')
+            raise ValueError('Запуск: start_sync.py; микроуточнение: --micro-only; диагностика точек: --diagnose-points; проверка: --check.')
     except KeyboardInterrupt:
         print()
         print()

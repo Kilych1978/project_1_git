@@ -1,0 +1,32 @@
+[
+  {
+    "reference_time_sec": 448.755,
+    "before_ms": 10.707617499003188,
+    "after_ms": 0.00019531250000189476,
+    "before_score": 0.9975264285376128,
+    "after_score": 0.9993827922076572,
+    "protected_regressions": 0,
+    "pipeline_anchor_step_sec": 1.0,
+    "measurement_window_sec": 0.015625
+  },
+  {
+    "reference_time_sec": 3125.916,
+    "before_ms": 5.793378181641179,
+    "after_ms": 0.007464610042736316,
+    "before_score": 0.9974051579669577,
+    "after_score": 0.9911726399028639,
+    "protected_regressions": 0,
+    "pipeline_anchor_step_sec": 1.0,
+    "measurement_window_sec": 0.015625
+  },
+  {
+    "reference_time_sec": 3135.301,
+    "before_ms": 5.656523248007623,
+    "after_ms": 0.0007335865825647639,
+    "before_score": 0.98349103494885,
+    "after_score": 0.9968330072920678,
+    "protected_regressions": 0,
+    "pipeline_anchor_step_sec": 1.0,
+    "measurement_window_sec": 0.015625
+  }
+]

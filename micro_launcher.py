@@ -9,11 +9,13 @@ from analyzer import prepare_audio_analysis
 from common import Progress, SelectedTracks, build_exact_time_grid
 from pcm_core.config import Settings
 from pcm_refiner import refine_rendered_audio
+from diagnostics import diagnostic_session
 from scanner import (ask_selection, check_ffprobe, confirm_selected_tracks,
                      create_output_directory, print_pair_summary,
                      save_initial_metadata, scan_audio_files, validate_selected_tracks)
 
 
+@diagnostic_session
 def main():
     started = time.monotonic()
     print()
@@ -68,8 +70,10 @@ def main():
                 'reference_time': final_map['reference_time'].tolist(),
                 'offset': final_map['offset'].tolist(),
                 'audio_rendered': report['status'] == 'PCM_REFINED',
-                'reference_time_definition': 'REFERENCE = TARGET + OFFSET'}
-    (output / 'FINAL_SYNC_MAP.json').write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding='utf-8')
+                'reference_time_definition': ('Nominal clock; exact PCM sampling plan: pcm_micro_refinement.fine_map'
+                    if report.get('nominal_map_has_pcm_layers') else 'REFERENCE = TARGET + OFFSET')}
+    with (output / 'FINAL_SYNC_MAP.json').open('w', encoding='utf-8') as file:
+        json.dump(snapshot, file, ensure_ascii=False, indent=2)
     progress.done(100., 'Результат и отчёты сохранены')
     rows = [r for r in report['actual_output_windows'] if r['micro_changed'] and r['status'] == 'VERIFIED']
     print()

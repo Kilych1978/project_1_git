@@ -1,14 +1,20 @@
 """Independent windows + actual output: fail closed instead of merely logging a regression."""
+import hashlib
+import struct
 import numpy as np
 from .micro import grid, measure_window, refined_map
 
 
 def same_map(a, b, tolerance=1e-10):
+    if hasattr(a,'layers') or hasattr(b,'layers'):
+        return a.to_dict()==b.to_dict()
     if len(a.pieces) != len(b.pieces):
         return False
     for pa, pb in zip(a.pieces, b.pieces):
         knots = np.unique(np.r_[pa.target, pb.target])
-        points = np.unique(np.r_[knots, (knots[1:] + knots[:-1]) / 2])
+        spans = np.diff(knots)
+        points = np.unique(np.r_[knots, knots[:-1]+spans*.25,
+                                 knots[:-1]+spans*.5, knots[:-1]+spans*.75])
         if np.max(np.abs(a.forward(points) - b.forward(points))) > tolerance:
             return False
     return True
@@ -39,7 +45,19 @@ def _signature(mapping, t, settings):
             a = max(0, np.searchsorted(x, t - span) - 1)
             b = min(len(x) - 1, np.searchsorted(x, t + span))
             parts += [x[a:b + 1].tobytes(), spline.c[:, a:b].tobytes()]
-    return tuple(parts)
+    # Keep a fixed-size exact-content fingerprint instead of retaining copies
+    # of all polynomial bytes for tens of thousands of cached PCM windows.
+    digest = hashlib.sha256()
+    if hasattr(mapping,'layers'):
+        import json
+        center=float(mapping.forward([t])[0])
+        local=[layer for layer in mapping.layers if
+               layer['reference'][0]<=center+span and layer['reference'][-1]>=center-span]
+        digest.update(json.dumps(local,sort_keys=True).encode())
+    for part in parts:
+        digest.update(struct.pack('<Q', len(part)))
+        digest.update(part)
+    return digest.digest()
 
 
 def _change_extent(base, candidate, t, settings, edge=False):
@@ -48,13 +66,15 @@ def _change_extent(base, candidate, t, settings, edge=False):
     span = length / 2 + (0. if edge else min(.45, settings.anchor_step / 6))
     span += settings.sinc_radius / settings.analysis_rate
     probes = np.linspace(t - span, t + span, 9)
+    if hasattr(candidate,'extent'):
+        return candidate.extent(base,candidate.base.forward(probes))
     a, b = base.forward(probes), candidate.forward(probes)
     valid = np.isfinite(a) & np.isfinite(b)
     return float(np.max(np.abs(a[valid] - b[valid]))) if valid.any() else 0.
 
 
 def gate_micro(reference, target, base, measurements, settings, log=print, progress=None, probe_times=None, strong_fast=False,
-               prior_schedules=()):
+               prior_schedules=(), map_builder=None, classic_rollback=False):
     """Gate training and independent centers with the final renderer's PCM rules.
 
     Measurements still require neighbour/reciprocal consensus. Independent
@@ -135,7 +155,7 @@ def gate_micro(reference, target, base, measurements, settings, log=print, progr
     rows = []
     for attempt in range(1, 9):
         try:
-            candidate = refined_map(base, measurements, settings, enabled, audit)
+            candidate = (map_builder or refined_map)(base, measurements, settings, enabled, audit)
         except ValueError as exc:
             audit.append({'attempt': attempt, 'status': 'INVALID_MAP', 'reason': str(exc)})
             return base, rows, audit
@@ -165,7 +185,8 @@ def gate_micro(reference, target, base, measurements, settings, log=print, progr
     for index, (rate, whole) in enumerate(((settings.max_rate_change, False), (.001, False), (.001, True)), 9):
         try:
             reduced, removed = cancel_unsafe_components(base, original, failed_times,
-                settings.max_rate_change, whole_components=whole, rollback_rate=rate)
+                settings.max_rate_change, whole_components=whole, rollback_rate=rate,
+                taper_scale=2. if classic_rollback else 1.,combine_masks=not classic_rollback)
         except ValueError as exc:
             audit.append({'status': 'GATE_LOCAL_CANCEL_INVALID', 'attempt': index, 'reason': str(exc)})
             continue
@@ -204,9 +225,11 @@ def verify_render(reference, original_target, rendered, base, final, settings, p
             continue
         key = (settings, t)
         if key not in baseline_cache:
-            baseline_cache[key] = measure_window(reference, original_target, base, t, settings)
+            baseline_cache[key] = measure_window(reference, original_target, base, t, settings,
+                                                 quantize_pcm16=settings.verification_pcm16)
         baseline_center = baseline_cache[key]
-        expected = measure_window(reference, original_target, final, t, settings)
+        expected = measure_window(reference, original_target, final, t, settings,
+                                  quantize_pcm16=settings.verification_pcm16)
         actual = expected if virtual else measure_window(reference, rendered, output_map, center, settings)
         def valid(m):
             return bool(m and not m["near_edge"] and m["score"] >= settings.min_raw_score
@@ -216,8 +239,10 @@ def verify_render(reference, original_target, rendered, base, final, settings, p
         if (not valid(actual) or not valid(baseline_center)) and settings.anchor_step < .5:
             from dataclasses import replace
             wide = replace(settings, anchor_step=.5)
-            wide_before = measure_window(reference, original_target, base, t, wide)
-            wide_expected = measure_window(reference, original_target, final, t, wide)
+            wide_before = measure_window(reference, original_target, base, t, wide,
+                                         quantize_pcm16=settings.verification_pcm16)
+            wide_expected = measure_window(reference, original_target, final, t, wide,
+                                           quantize_pcm16=settings.verification_pcm16)
             wide_actual = wide_expected if virtual else measure_window(reference, rendered, output_map, center, wide)
             if valid(wide_actual) and valid(wide_before) and valid(wide_expected):
                 actual, baseline_center, expected = wide_actual, wide_before, wide_expected
@@ -287,15 +312,26 @@ def render_verdict(rows, require_micro=True):
 
 
 def cancel_unsafe_components(base, candidate, bad_times, max_rate_change=.02, whole_components=False,
-                             rollback_rate=.001):
+                             rollback_rate=.001, taper_scale=1., combine_masks=True, protected_half_window=.25):
     """Return unsafe PCM neighbourhoods to the baseline, retaining distant curves.
 
     Add knots only near a failed window, with a smooth return to zero. Removing
     a whole clock curve would throw away a movie's improvements for one splice.
     All modified boundaries must subsequently pass decoded-output verification.
     """
-    from .model import Piece, TimeMap
+    from .model import Piece, TimeMap, curve_spline
     from scipy.interpolate import PchipInterpolator
+
+    if hasattr(candidate,'reduced'):
+        reference_times=candidate.base.forward(np.asarray(bad_times))
+        return candidate.reduced(reference_times,protected_half_window)
+
+    def active_intervals(y, derivative=None):
+        active = (np.abs(y[:-1]) > 1e-12) | (np.abs(y[1:]) > 1e-12)
+        if derivative is not None:
+            derivative = np.asarray(derivative)
+            active |= (np.abs(derivative[:-1]) > 1e-12) | (np.abs(derivative[1:]) > 1e-12)
+        return active
 
     def rebuild(bp, p, curves):
         # A zoom is added to an already verified map. Cancel ONLY its extra
@@ -305,7 +341,7 @@ def cancel_unsafe_components(base, candidate, bad_times, max_rate_change=.02, wh
         for curve in curves:
             x, y = np.asarray(curve['target']), np.asarray(curve['delta'])
             valid = (knots >= x[0]) & (knots <= x[-1])
-            extra[valid] += PchipInterpolator(x, y)(knots[valid])
+            extra[valid] += curve_spline(curve)(knots[valid])
         return Piece(knots, bp.reference_at(knots) + extra, [*bp.corrections, *curves])
 
     output = []
@@ -315,47 +351,70 @@ def cancel_unsafe_components(base, candidate, bad_times, max_rate_change=.02, wh
         for curve in p.corrections[len(bp.corrections):]:
             x = np.asarray(curve['target'], float)
             y = np.asarray(curve['delta'], float).copy()
-            active_intervals = (np.abs(y[:-1]) > 1e-12) | (np.abs(y[1:]) > 1e-12)
+            dy = np.asarray(curve['derivative'], float).copy() if 'derivative' in curve else None
+            active = active_intervals(y,dy)
             i = 0
-            while i < len(active_intervals):
-                if not active_intervals[i]:
+            while i < len(active):
+                if not active[i]:
                     i += 1
                     continue
                 a = i
-                while i + 1 < len(active_intervals) and active_intervals[i + 1]:
+                while i + 1 < len(active) and active[i + 1]:
                     i += 1
                 b = i + 1
-                times = [t for t in bad_times if x[a] - .25 <= t <= x[b] + .25]
+                times = [t for t in bad_times if x[a] - protected_half_window <= t <= x[b] + protected_half_window]
                 if times:
-                    # A 250 ms protected half-window covers all PCM contexts and sinc
-                    # halo. The taper is long enough for the permitted rate.
+                    # The caller protects its complete PCM window and interpolation
+                    # halo. The taper must also respect the permitted rate.
                     # A rate that is legal for an edit can still destroy PCM
                     # coherence over a 125/220 ms window. Undo a local offset
                     # at clock-drift speed, not at the maximum edit speed.
-                    taper = max(.15, 2 * float(np.max(np.abs(y[a:b + 1]))) /
+                    taper = max(.15, taper_scale * float(np.max(np.abs(y[a:b + 1]))) /
                                 min(max_rate_change, rollback_rate))
                     additions = []
                     for t in times:
-                        lo, hi = max(x[a], t - .25 - taper), min(x[b], t + .25 + taper)
+                        lo, hi = max(x[a], t - protected_half_window - taper), min(x[b], t + protected_half_window + taper)
                         additions.extend(np.linspace(lo, hi, max(3, int((hi-lo)/.04)+2)))
-                        additions += [max(x[a], t-.25), min(x[b], t+.25)]
+                        additions += [max(x[a], t-protected_half_window), min(x[b], t+protected_half_window)]
                         removed.append({'start': float(lo), 'end': float(hi), 'failed_time': float(t)})
                     old_x, old_y = x, y
+                    old_curve = {'target': x, 'delta': y}
+                    if dy is not None:
+                        old_curve['derivative'] = dy
+                    old_spline = curve_spline(old_curve)
                     x = np.unique(np.r_[x, additions])
-                    y = PchipInterpolator(old_x, old_y)(x)
+                    y = old_spline(x)
+                    if dy is not None:
+                        dy = old_spline(x, nu=1)
+                    combined = np.ones(len(x))
+                    combined_derivative = np.zeros(len(x))
+                    local = (x >= old_x[a]) & (x <= old_x[b])
                     for t in times:
-                        distance = np.maximum(0., np.abs(x-t) - .25)
+                        distance = np.maximum(0., np.abs(x-t) - protected_half_window)
                         weight = .5 - .5 * np.cos(np.pi * np.minimum(1., distance / taper))
-                        # A long taper must stop at this component's existing
-                        # zero barriers, preserving independent regions exactly.
-                        local = (x >= old_x[a]) & (x <= old_x[b])
-                        y[local] *= weight[local]
+                        # Overlapping failures describe ONE unsafe region.
+                        # Multiplying their masks attenuates good audio farther
+                        # away merely because the same defect had more probes.
+                        angle = np.pi*np.minimum(1., distance/taper)
+                        dw = .5*np.sin(angle)*np.pi/taper*np.sign(x-t)
+                        dw[distance >= taper] = 0.
+                        if combine_masks:
+                            selected = weight < combined
+                            combined[selected] = weight[selected]
+                            combined_derivative[selected] = dw[selected]
+                        else:
+                            combined_derivative = combined_derivative*weight+combined*dw
+                            combined *= weight
+                    if dy is not None:
+                        dy[local] = dy[local]*combined[local]+y[local]*combined_derivative[local]
+                    y[local] *= combined[local]
                     # Recompute components against the enlarged knot array.
-                    active_intervals = (np.abs(y[:-1]) > 1e-12) | (np.abs(y[1:]) > 1e-12)
+                    active = active_intervals(y,dy)
                     i = int(np.searchsorted(x, old_x[b])) - 1
                 i += 1
-            if np.any(np.abs(y) > 1e-12):
-                retained.append({'target': x.tolist(), 'delta': y.tolist()})
+            if active.any():
+                retained.append({'target': x.tolist(), 'delta': y.tolist(),
+                                 **({'derivative': dy.tolist()} if dy is not None else {})})
         output.append(rebuild(bp, p, retained))
     result = TimeMap(output, list(base.notes))
     try:
@@ -372,13 +431,13 @@ def cancel_unsafe_components(base, candidate, bad_times, max_rate_change=.02, wh
             residuals = p.corrections[len(bp.corrections):]
             for curve_index, curve in enumerate(residuals):
                 x, y = np.asarray(curve['target']), np.asarray(curve['delta'])
-                active = (np.abs(y[:-1]) > 1e-12) | (np.abs(y[1:]) > 1e-12)
+                active = active_intervals(y,curve.get('derivative'))
                 starts = np.flatnonzero(active & ~np.r_[False, active[:-1]])
                 ends = np.flatnonzero(active & ~np.r_[active[1:], False]) + 1
                 components += [(curve_index, int(a), int(b), float(x[a]), float(x[b]))
                                for a, b in zip(starts, ends)]
             blocked = {i for i, c in enumerate(components)
-                       if any(c[3]-.25 <= t <= c[4]+.25 for t in bad_times)}
+                       if any(c[3]-protected_half_window <= t <= c[4]+protected_half_window for t in bad_times)}
             # A later residual curve depends on earlier corrections: cancel
             # all overlapping components together, rather than leave it alone.
             while True:
@@ -387,11 +446,13 @@ def cancel_unsafe_components(base, candidate, bad_times, max_rate_change=.02, wh
                 if not extra:
                     break
                 blocked |= extra
-            curves = [{'target': list(c['target']), 'delta': list(c['delta'])} for c in residuals]
+            curves = [{key: list(value) for key, value in c.items()} for c in residuals]
             for i in blocked:
                 ci, a, b, lo, hi = components[i]
                 curves[ci]['delta'][a:b+1] = [0.]*(b-a+1)
+                if 'derivative' in curves[ci]:
+                    curves[ci]['derivative'][a:b+1] = [0.]*(b-a+1)
                 removed.append({'start': lo, 'end': hi, 'mode': 'whole_component_rate_fallback'})
-            curves = [c for c in curves if np.any(np.abs(c['delta']) > 1e-12)]
+            curves = [c for c in curves if active_intervals(np.asarray(c['delta']),c.get('derivative')).any()]
             output.append(rebuild(bp, p, curves))
         return TimeMap(output, list(base.notes)).validate(max_rate_change), removed

@@ -1,6 +1,6 @@
-# Сборка Modular 6.9.6
+# Сборка Modular 6.9.7
 
-[Скачать ZIP](https://raw.githubusercontent.com/Kilych1978/project_1_git/refs/heads/main/releases/Universal_Audio_Waveform_Sync_modular_v6.9.6.zip)
+[Скачать ZIP](https://raw.githubusercontent.com/Kilych1978/project_1_git/refs/heads/main/releases/Universal_Audio_Waveform_Sync_modular_v6.9.7.zip)
 
 Скачайте архив и распакуйте в новую папку. Инструкция внутри — README_RU.md.
 Контрольная сумма находится рядом в файле `.zip.sha256`.
@@ -10,3 +10,7 @@
 с небольшим остаточным сдвигом есть `MICRO_REFINE.cmd`.
 Каждый запуск работает с выбранными аудиофайлами и создаёт новые рабочие
 данные. Папки, карты и отчёты от предыдущих запусков не требуются.
+
+Для диагностики конкретных мест без полного прогона — `DIAGNOSE_POINTS.cmd`.
+Архивы `REPORT_BUNDLE*.zip` создаются автоматически, каждый не больше 25 МиБ;
+приложите все тома к сообщению.

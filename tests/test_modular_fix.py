@@ -278,7 +278,7 @@ class ModularFixTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             final, result, report = refine_rendered_audio(selected,
                 {'reference_pcm': directory / 'ref.pcm'}, zero, result, out,
-                settings or Settings(anchor_step=2., min_improvement=1. / SR), make_plots=False)
+                settings or Settings(anchor_step=2., min_improvement=1. / SR), make_plots=False, protect_best=False)
         self.assertEqual(hashlib.sha256(tp.read_bytes()).hexdigest(), original_hash)
         return final, result, report, out
 

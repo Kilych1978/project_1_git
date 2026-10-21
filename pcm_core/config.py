@@ -13,6 +13,7 @@ class Settings:
     min_improvement: float = 0.25 / 48000
     max_rate_change: float = 0.08
     sinc_radius: int = 16
+    verification_pcm16: bool = False
 
     def __post_init__(self):
         if not 0.125 <= self.anchor_step <= 30:

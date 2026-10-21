@@ -30,7 +30,9 @@ from safety import *
 from render_guard import *
 from micro_refiner import *
 from pcm_refiner import refine_rendered_audio
+from diagnostics import diagnostic_session
 
+@diagnostic_session
 def main():
 
     total_start = time.time()
@@ -966,7 +968,8 @@ def main():
         "reference_duration": float(selected.reference.duration),
         "target_duration": float(selected.target.duration),
         "output_duration": float(rendered_info.duration),
-        "reference_time_definition": "REFERENCE = TARGET + OFFSET",
+        "reference_time_definition": ('Nominal clock; exact PCM sampling plan: pcm_micro_refinement.fine_map'
+            if pcm_report.get('nominal_map_has_pcm_layers') else 'REFERENCE = TARGET + OFFSET'),
         "target_time": [float(x) for x in final_sync_map["target_time"]],
         "offset": [float(x) for x in final_sync_map["offset"]],
         "reference_time": [float(x) for x in final_sync_map["reference_time"]],

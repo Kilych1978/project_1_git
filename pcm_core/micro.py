@@ -2,10 +2,10 @@
 from dataclasses import asdict, dataclass
 from functools import lru_cache
 import numpy as np
-from scipy.interpolate import PchipInterpolator
+from scipy.interpolate import PchipInterpolator, CubicHermiteSpline
 from scipy.signal import butter, sosfiltfilt
 from .dsp import mapped_window, ncc_valid, peak
-from .model import Piece, TimeMap
+from .model import Piece, TimeMap, curve_spline
 
 
 @lru_cache(maxsize=24)
@@ -50,7 +50,8 @@ class _InverseMap:
         return rates
 
 
-def measure_window(reference, target, mapping, target_time, settings, radius=None, window_sec=None):
+def measure_window(reference, target, mapping, target_time, settings, radius=None, window_sec=None,
+                   quantize_pcm16=False):
     sr = settings.analysis_rate
     center = float(mapping.forward([target_time])[0])
     if not np.isfinite(center):
@@ -58,6 +59,11 @@ def measure_window(reference, target, mapping, target_time, settings, radius=Non
     # Keep training/holdout PCM regions disjoint even in --step 0.5/1 modes.
     length = round(min(window_sec or settings.micro_window, settings.anchor_step / 8) * sr)
     warped, start = mapped_window(target, mapping, center, length, sr, settings.sinc_radius)
+    if warped is not None and quantize_pcm16:
+        # Native S16 output rounds AFTER interpolation. Include the same
+        # rounding in the virtual preflight instead of discovering its effect
+        # only after writing a full multichannel movie soundtrack.
+        warped = np.clip(np.rint(warped), -32768, 32767).astype(np.float32)
     if warped is None or np.sqrt(np.mean(warped.astype(np.float64) ** 2)) < 1e-6:
         return None
     search_samples = round((radius or settings.micro_radius) * sr)
@@ -104,7 +110,8 @@ def measure_window(reference, target, mapping, target_time, settings, radius=Non
         # An imperfect BASE slope can smear a 220 ms window even when its
         # center delay is real. A shorter waveform window measures that center
         # without pretending that the residual rate is already corrected.
-        shorter = measure_window(reference, target, mapping, target_time, settings, radius, window_sec=.040)
+        shorter = measure_window(reference, target, mapping, target_time, settings, radius, window_sec=.040,
+                                 quantize_pcm16=quantize_pcm16)
         if shorter and shorter["score"] >= settings.min_raw_score and shorter["margin"] >= settings.min_raw_margin:
             shorter["method"] += "-short"
             return shorter
@@ -260,21 +267,63 @@ def refined_map(base, measurements, settings, enabled_times=None, audit=None):
                 fitted = False
                 if len(run) >= 3:
                     weights = np.array([m.score for m in run]) ** 2
-                    slope, intercept = np.polyfit(times - times[0], vals, 1, w=weights)
+                    # Fit the source clock, not the residual of an already
+                    # curved map. Otherwise fitting/interpolating the residual
+                    # introduces a second, incompatible cubic between anchors.
+                    source_offsets = piece.reference_at(times) - times + vals
+                    slope, intercept = np.polyfit(times - times[0], source_offsets, 1, w=weights)
                     fitted_values = slope * (times - times[0]) + intercept
-                    if np.max(np.abs(vals - fitted_values)) <= 1. / settings.analysis_rate:
-                        vals = fitted_values
+                    if np.max(np.abs(source_offsets - fitted_values)) <= 1. / settings.analysis_rate:
+                        vals = fitted_values - (piece.reference_at(times) - times)
                         fitted = True
+                source_fit = None
+                if len(run) >= 3:
+                    source_values = piece.reference_at(times) - times + vals
+                    clock_slope, clock_offset = np.polyfit(times-times[0], source_values, 1)
+                    if np.max(np.abs(source_values-(clock_slope*(times-times[0])+clock_offset))) < settings.raw_consensus:
+                        source_fit = (clock_slope, clock_offset)
                 left = max(piece.target[0], times[0] - settings.anchor_step / 2)
                 right = min(piece.target[-1], times[-1] + settings.anchor_step / 2)
                 left_value = right_value = 0.
                 # Uniform residual/rate drift may be extended to the edges, but
                 # only when every anchor supports it; edge holdouts still gate it.
-                if len(run) == len(rows) and len(run) >= 3:
-                    slope, intercept = np.polyfit(times, vals, 1)
-                    if np.max(np.abs(vals - (slope * times + intercept))) < settings.raw_consensus:
-                        left, right = piece.target[0], piece.target[-1]
-                        left_value, right_value = slope * left + intercept, slope * right + intercept
+                if source_fit is not None:
+                    slope, intercept = source_fit
+                    # A stable clock at ONE movie edge can be extrapolated to
+                    # that edge even when an unrelated scene exists elsewhere.
+                    # Edge holdouts still verify the extrapolation. Avoid an
+                    # artificial zero taper that erodes correct early anchors.
+                    if run[0].target_time == rows[0].target_time:
+                        left = piece.target[0]
+                        left_value = slope*(left-times[0])+intercept-(piece.reference_at([left])[0]-left)
+                    if run[-1].target_time == rows[-1].target_time:
+                        right = piece.target[-1]
+                        right_value = slope*(right-times[0])+intercept-(piece.reference_at([right])[0]-right)
+                # A splice later in the same measured run does not invalidate
+                # the independently consistent clock at a movie edge. Estimate
+                # each edge from its own neighbouring raw PCM anchors.
+                if len(run) >= 3:
+                    source_values = piece.reference_at(times)-times+vals
+                    count = min(5,len(run))
+                    for edge,indices in (('left',np.arange(count)),('right',np.arange(len(run)-count,len(run)))):
+                        if edge=='left' and run[0].target_time!=rows[0].target_time:
+                            continue
+                        if edge=='right' and run[-1].target_time!=rows[-1].target_time:
+                            continue
+                        xx = times[indices]-times[indices[0]]
+                        slope,intercept = np.polyfit(xx,source_values[indices],1)
+                        error = float(np.max(np.abs(source_values[indices]-(slope*xx+intercept))))
+                        if error>settings.raw_consensus or abs(slope)>.75*settings.max_rate_change:
+                            continue
+                        bound = piece.target[0] if edge=='left' else piece.target[-1]
+                        value = slope*(bound-times[indices[0]])+intercept-(piece.reference_at([bound])[0]-bound)
+                        if edge=='left':
+                            left,left_value = bound,value
+                        else:
+                            right,right_value = bound,value
+                        if audit is not None:
+                            audit.append({'status':'EDGE_CLOCK_EXTRAPOLATION','edge':edge,
+                                          'target_time':float(bound),'fit_error_sec':error})
                 # Validate each supported run independently. A bad boundary
                 # must never invalidate unrelated improvements in a movie.
                 # A smaller, independently checked correction is preferable
@@ -292,8 +341,25 @@ def refined_map(base, measurements, settings, enabled_times=None, audit=None):
                 for gain, trial_values, shaped in options:
                     curve = {'target': [left, *times.tolist(), right],
                              'delta': [left_value * gain, *trial_values.tolist(), right_value * gain]}
+                    if piece.corrections:
+                        # Interpolate the desired ORIGINAL source clock, then
+                        # subtract the exact base polynomial. Two independently
+                        # fitted residual PCHIPs do not add up to that clock.
+                        x = np.asarray(curve['target'])
+                        desired = PchipInterpolator(x, piece.reference_at(x) - x + curve['delta'])
+                        rates = desired(x, nu=1)
+                        if left > piece.target[0]:
+                            rates[0] = piece.rate_at([left])[0] - 1.
+                        if right < piece.target[-1]:
+                            rates[-1] = piece.rate_at([right])[0] - 1.
+                        desired = CubicHermiteSpline(x, desired(x), rates)
+                        knots = np.unique(np.r_[x, piece.target[(piece.target > left) & (piece.target < right)]])
+                        delta = desired(knots) - (piece.reference_at(knots) - knots)
+                        derivative = desired(knots, nu=1) - (piece.rate_at(knots) - 1.)
+                        curve = {'target': knots.tolist(), 'delta': delta.tolist(),
+                                 'derivative': derivative.tolist()}
                     local_times = np.unique(np.r_[piece.target, curve['target']])
-                    interpolation = PchipInterpolator(curve['target'], curve['delta'], extrapolate=False)
+                    interpolation = curve_spline(curve)
                     local_delta = np.nan_to_num(interpolation(local_times), nan=0.)
                     try:
                         local_piece = Piece(local_times, piece.reference_at(local_times) + local_delta,
@@ -303,7 +369,7 @@ def refined_map(base, measurements, settings, enabled_times=None, audit=None):
                         continue
                     accepted_gain = gain
                     edge_limited = shaped
-                    nodes.extend(zip(curve['target'], curve['delta']))
+                    nodes.append(curve)
                     break
                 if audit is not None and (accepted_gain != 1. or fitted or edge_limited):
                     audit.append({'status': 'LOCAL_CURVE', 'start': float(times[0]),
@@ -326,14 +392,19 @@ def refined_map(base, measurements, settings, enabled_times=None, audit=None):
         if not nodes:
             output.append(Piece(piece.target.copy(), piece.reference.copy(), list(piece.corrections)))
             continue
-        unique = {float(t): float(v) for t, v in nodes}
+        unique = {float(t): float(v) for curve in nodes for t, v in zip(curve['target'], curve['delta'])}
         # Preserve the base's existing nonlinear knots and each fine anchor exactly.
         nt = np.unique(np.r_[piece.target, list(unique)])
         xs = np.array(sorted(unique))
         ys = np.array([unique[x] for x in xs])
-        interpolator = PchipInterpolator(xs, ys, extrapolate=False)
+        addition = {'target': xs.tolist(), 'delta': ys.tolist()}
+        if piece.corrections:
+            derivatives = {float(t): float(d) for curve in nodes
+                           for t, d in zip(curve['target'], curve['derivative'])}
+            addition['derivative'] = [derivatives[x] for x in xs]
+        interpolator = curve_spline(addition)
         corrections = np.nan_to_num(interpolator(nt), nan=0.)
-        curves = [*piece.corrections, {"target": xs.tolist(), "delta": ys.tolist()}]
+        curves = [*piece.corrections, addition]
         new_piece = Piece(nt, piece.reference_at(nt) + corrections, curves)
         # The combined interpolator can change derivatives at neighbouring
         # zero boundaries. If necessary, damp just those knots, not the map.
@@ -356,9 +427,14 @@ def refined_map(base, measurements, settings, enabled_times=None, audit=None):
             if not changed:
                 break
             ys[list(changed)] *= .5
-            interpolation = PchipInterpolator(xs, ys, extrapolate=False)
+            addition = {**addition, 'delta': ys.tolist()}
+            if 'derivative' in addition:
+                dy = np.asarray(addition['derivative'])
+                dy[list(changed)] *= .5
+                addition['derivative'] = dy.tolist()
+            interpolation = curve_spline(addition)
             corrections = np.nan_to_num(interpolation(nt), nan=0.)
-            curves = [*piece.corrections, {'target': xs.tolist(), 'delta': ys.tolist()}]
+            curves = [*piece.corrections, addition]
             new_piece = Piece(nt, piece.reference_at(nt) + corrections, curves)
             if audit is not None:
                 audit.append({'status': 'LOCAL_RATE_LIMIT', 'knots': [float(xs[i]) for i in sorted(changed)]})

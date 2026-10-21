@@ -8,6 +8,30 @@ test_polarity_inversion_and_gain_do_not_reverse_delay (tests.test_alignment.Alig
 test_silence_cannot_confirm_a_shift (tests.test_alignment.AlignmentTests.test_silence_cannot_confirm_a_shift) ... ok
 test_unrelated_tracks_are_not_refined (tests.test_alignment.AlignmentTests.test_unrelated_tracks_are_not_refined) ... ok
 test_wrong_strong_anchors_are_rejected_by_real_holdouts (tests.test_alignment.AlignmentTests.test_wrong_strong_anchors_are_rejected_by_real_holdouts) ... ok
+test_exact_replacement_and_rollback_preserve_the_established_curve (tests.test_best_plan.BestPlanTests.test_exact_replacement_and_rollback_preserve_the_established_curve) ... ok
+test_fresh_common_delay_proposal_without_old_folders (tests.test_best_plan.BestPlanTests.test_fresh_common_delay_proposal_without_old_folders) ... ok
+test_native_file_keeps_old_good_scene_and_adds_new_improvement (tests.test_best_plan.BestPlanTests.test_native_file_keeps_old_good_scene_and_adds_new_improvement) ... ok
+test_pcm_patches_preserve_bad_scene_and_render_identical_weights_on_all_channels (tests.test_best_plan.BestPlanTests.test_pcm_patches_preserve_bad_scene_and_render_identical_weights_on_all_channels) ... ok
+test_pcm_result_does_not_collide_with_accepted_coarse_wav (tests.test_best_plan.BestPlanTests.test_pcm_result_does_not_collide_with_accepted_coarse_wav) ... ok
+test_wide_window_smear_still_reaches_short_waveform_patch_search (tests.test_best_plan.BestPlanTests.test_wide_window_smear_still_reaches_short_waveform_patch_search) ... ok
+test_complete_bundle_contains_final_map_logs_and_clips_without_full_audio (tests.test_diagnostics.DiagnosticTests.test_complete_bundle_contains_final_map_logs_and_clips_without_full_audio) ... ok
+test_diagnostic_timecodes_and_exact_first_channel_export (tests.test_diagnostics.DiagnosticTests.test_diagnostic_timecodes_and_exact_first_channel_export) ... /workspace/project_1_git/diagnose_points.py:53: ResourceWarning: unclosed file <_io.FileIO name=4 mode='rb' closefd=True>
+  decoded = decode_first_channel_stream(info, path, Progress(), index*50., (index+1)*50.,
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/workspace/project_1_git/diagnose_points.py:53: ResourceWarning: unclosed file <_io.FileIO name=6 mode='rb' closefd=True>
+  decoded = decode_first_channel_stream(info, path, Progress(), index*50., (index+1)*50.,
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/workspace/project_1_git/diagnose_points.py:53: ResourceWarning: unclosed file <_io.FileIO name=4 mode='rb' closefd=True>
+  decoded = decode_first_channel_stream(info, path, Progress(), index*50., (index+1)*50.,
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/workspace/project_1_git/diagnose_points.py:53: ResourceWarning: unclosed file <_io.FileIO name=7 mode='rb' closefd=True>
+  decoded = decode_first_channel_stream(info, path, Progress(), index*50., (index+1)*50.,
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_large_report_is_split_losslessly_into_independent_uploadable_zips (tests.test_diagnostics.DiagnosticTests.test_large_report_is_split_losslessly_into_independent_uploadable_zips) ... ok
+test_progress_fits_terminal_and_clears_previous_message (tests.test_diagnostics.DiagnosticTests.test_progress_fits_terminal_and_clears_previous_message) ... ok
+test_redirected_output_is_readable_and_throttled (tests.test_diagnostics.DiagnosticTests.test_redirected_output_is_readable_and_throttled) ... ok
+test_session_packages_after_final_reports_and_on_failure (tests.test_diagnostics.DiagnosticTests.test_session_packages_after_final_reports_and_on_failure) ... ok
 test_35_seconds_without_common_audio_do_not_cancel_other_improvements (tests.test_modular_fix.ModularFixTests.test_35_seconds_without_common_audio_do_not_cancel_other_improvements) ... ok
 test_actual_6_and_10_ms_shifts_with_6_channels (tests.test_modular_fix.ModularFixTests.test_actual_6_and_10_ms_shifts_with_6_channels) ... ok
 test_consensus_undoes_known_candidate_curve_before_clock_check (tests.test_modular_fix.ModularFixTests.test_consensus_undoes_known_candidate_curve_before_clock_check) ... ok
@@ -18,16 +42,16 @@ test_failed_actual_render_is_discarded_without_losing_baseline (tests.test_modul
 test_failing_finer_grid_preserves_previously_verified_candidate (tests.test_modular_fix.ModularFixTests.test_failing_finer_grid_preserves_previously_verified_candidate) ... ok
 test_identity_and_unrelated_audio_keep_baseline (tests.test_modular_fix.ModularFixTests.test_identity_and_unrelated_audio_keep_baseline) ... ok
 test_main_pcm_fallback_cannot_hide_a_known_dense_grid_regression (tests.test_modular_fix.ModularFixTests.test_main_pcm_fallback_cannot_hide_a_known_dense_grid_regression) ... ok
-test_micro_only_original_menus_create_verified_multichannel_output (tests.test_modular_fix.ModularFixTests.test_micro_only_original_menus_create_verified_multichannel_output) ... /workspace/project_1_git/analyzer.py:1124: ResourceWarning: unclosed file <_io.FileIO name=3 mode='rb' closefd=True>
+test_micro_only_original_menus_create_verified_multichannel_output (tests.test_modular_fix.ModularFixTests.test_micro_only_original_menus_create_verified_multichannel_output) ... /workspace/project_1_git/analyzer.py:1124: ResourceWarning: unclosed file <_io.FileIO name=4 mode='rb' closefd=True>
   decode_first_channel_stream(
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-/workspace/project_1_git/analyzer.py:1124: ResourceWarning: unclosed file <_io.FileIO name=5 mode='rb' closefd=True>
+/workspace/project_1_git/analyzer.py:1124: ResourceWarning: unclosed file <_io.FileIO name=6 mode='rb' closefd=True>
   decode_first_channel_stream(
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-/workspace/project_1_git/analyzer.py:1149: ResourceWarning: unclosed file <_io.FileIO name=3 mode='rb' closefd=True>
+/workspace/project_1_git/analyzer.py:1149: ResourceWarning: unclosed file <_io.FileIO name=4 mode='rb' closefd=True>
   decode_first_channel_stream(
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-/workspace/project_1_git/analyzer.py:1149: ResourceWarning: unclosed file <_io.FileIO name=5 mode='rb' closefd=True>
+/workspace/project_1_git/analyzer.py:1149: ResourceWarning: unclosed file <_io.FileIO name=6 mode='rb' closefd=True>
   decode_first_channel_stream(
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
@@ -42,9 +66,13 @@ test_splice_center_uses_reciprocal_pcm_instead_of_false_linear_clock (tests.test
 test_user_failure_measurements_no_long_gap_global_abort (tests.test_modular_fix.ModularFixTests.test_user_failure_measurements_no_long_gap_global_abort) ... ok
 test_bounded_gate_keeps_independent_good_curve_after_eight_failures (tests.test_pcm_recovery.PCMRecoveryTests.test_bounded_gate_keeps_independent_good_curve_after_eight_failures) ... ok
 test_consistent_clock_bridges_one_ambiguous_anchor_without_claiming_a_measurement (tests.test_pcm_recovery.PCMRecoveryTests.test_consistent_clock_bridges_one_ambiguous_anchor_without_claiming_a_measurement) ... ok
+test_cubic_with_equal_nodes_and_midpoints_is_still_changed_and_can_be_rolled_back (tests.test_pcm_recovery.PCMRecoveryTests.test_cubic_with_equal_nodes_and_midpoints_is_still_changed_and_can_be_rolled_back) ... ok
+test_repeated_failed_probe_does_not_multiply_rollback_into_good_audio (tests.test_pcm_recovery.PCMRecoveryTests.test_repeated_failed_probe_does_not_multiply_rollback_into_good_audio) ... ok
 test_rf64_fact_uses_actual_frames_instead_of_24_hour_sentinel (tests.test_pcm_recovery.PCMRecoveryTests.test_rf64_fact_uses_actual_frames_instead_of_24_hour_sentinel) ... ok
 test_s16_six_channel_render_keeps_precision_size_and_riff_timing (tests.test_pcm_recovery.PCMRecoveryTests.test_s16_six_channel_render_keeps_precision_size_and_riff_timing) ... ok
+test_zoom_cancels_base_curvature_between_anchors_and_survives_serialization (tests.test_pcm_recovery.PCMRecoveryTests.test_zoom_cancels_base_curvature_between_anchors_and_survives_serialization) ... ok
 test_zoom_rollback_preserves_verified_base_curve (tests.test_pcm_recovery.PCMRecoveryTests.test_zoom_rollback_preserves_verified_base_curve) ... ok
+test_exact_first_channel_sample_positions_and_overlapping_excerpts (tests.test_point_collector.PointCollectorTests.test_exact_first_channel_sample_positions_and_overlapping_excerpts) ... ok
 test_44100_hz_is_preserved_and_float_peaks_are_not_clipped (tests.test_render.RenderTests.test_44100_hz_is_preserved_and_float_peaks_are_not_clipped) ... ok
 test_6_channels_share_one_map_and_native_rate_is_preserved (tests.test_render.RenderTests.test_6_channels_share_one_map_and_native_rate_is_preserved) ... ok
 test_antialias_filter_at_compression (tests.test_render.RenderTests.test_antialias_filter_at_compression) ... ok
@@ -57,6 +85,6 @@ test_invalid_maps_and_overlapping_edits_are_rejected (tests.test_render.RenderTe
 test_out_of_range_is_silence (tests.test_render.RenderTests.test_out_of_range_is_silence) ... ok
 
 ----------------------------------------------------------------------
-Ran 45 tests in 96.668s
+Ran 61 tests in 154.120s
 
 OK

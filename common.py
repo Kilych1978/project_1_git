@@ -11,6 +11,8 @@
 from __future__ import annotations
 
 import math
+import shutil
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -77,6 +79,9 @@ class Progress:
         self.started = time.time()
         self.stage_started = time.time()
         self.context = context
+        self._last_width = 0
+        self._last_log = -float('inf')
+        self._last_percent = None
 
     # --------------------------------------------------------
     # Начало крупного этапа
@@ -86,12 +91,12 @@ class Progress:
         self.stage_started = time.time()
 
         print()
-        print("=" * 78)
+        print("=" * min(78, max(1, shutil.get_terminal_size().columns - 1)))
 
         # Заголовок этапа — это только заголовок.
         # Процент относится к реальной операции и показывается в update()/done().
         print(f"{self.context} | {name}" if self.context else name)
-        print("=" * 78)
+        print("=" * min(78, max(1, shutil.get_terminal_size().columns - 1)))
 
     # --------------------------------------------------------
     # Обычный процент
@@ -113,7 +118,7 @@ class Progress:
             ),
         )
 
-        line = f"\r[{percent:6.2f}%]"
+        line = f"[{percent:6.2f}%]"
 
         if self.context:
             line += f" {self.context} |"
@@ -142,11 +147,30 @@ class Progress:
                 f" | {speed:.2f}x"
             )
 
-        print(
-            line,
-            end="",
-            flush=True,
-        )
+        # Keep one spare column: reaching the right edge causes an automatic
+        # wrap in Windows Terminal / VS Code before the next carriage return.
+        width = max(1, shutil.get_terminal_size().columns - 1)
+        if len(line) > width:
+            # Preserve counters and ETA at the right; phase names are also
+            # printed in full in stage(). Short status messages keep their head.
+            prefix = f"[{percent:6.2f}%] "
+            room = width - len(prefix)
+            text = line[len(prefix):]
+            line = prefix + (('…' + text[-(room-1):]) if ' | ' in text and room > 1
+                             else text[:max(0, room-1)] + '…')
+            line = line[:width]
+        if sys.stdout.isatty():
+            padding = max(0, min(self._last_width, width) - len(line))
+            print('\r' + line + ' ' * padding, end='', flush=True)
+            self._last_width = len(line)
+        else:
+            # VS Code's Output pane and redirected logs cannot redraw a line.
+            # Do not emit a carriage-return record for every individual probe.
+            now = time.monotonic()
+            if now - self._last_log >= 10 or (percent >= 100 and self._last_percent != 100):
+                print(line, flush=True)
+                self._last_log = now
+                self._last_percent = percent
 
     # --------------------------------------------------------
     # Завершение строки прогресса
@@ -162,7 +186,9 @@ class Progress:
             message,
         )
 
-        print()
+        if sys.stdout.isatty():
+            print()
+        self._last_width = 0
 
     # --------------------------------------------------------
     # ETA

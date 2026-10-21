@@ -3,7 +3,7 @@ import subprocess
 import time
 import numpy as np
 from .audio import check_disk, decode
-from .dsp import sinc_sample
+from .blend import sample_map
 from .wav import output_codec, finalize_wave
 
 
@@ -37,11 +37,7 @@ def render(info, mapping, reference_duration, directory, settings, log=print, pr
                 for begin in range(0, frames, 16384):
                     end = min(frames, begin + 16384)
                     ref_times = np.arange(begin, end, dtype=np.float64) / sr
-                    source_times, delta = mapping.inverse_with_rate(ref_times)
-                    positions = source_times * sr
-                    # A discontinuity must not become an anti-alias rate estimate.
-                    cutoff = np.minimum(1., 1 / np.maximum(np.nan_to_num(delta, nan=1.), 1.))
-                    values = sinc_sample(source, positions, settings.sinc_radius, cutoff)
+                    values = sample_map(source,mapping,ref_times,sr,settings.sinc_radius)
                     process.stdin.write(values.astype("<f4", copy=False).tobytes())
                     now = time.monotonic()
                     if begin == 0 or now - last_log >= 5 or end == frames:

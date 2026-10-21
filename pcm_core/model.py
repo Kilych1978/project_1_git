@@ -5,7 +5,14 @@ Reference gaps produce silence; target gaps omit unmatched target material.
 """
 from dataclasses import dataclass, field
 import numpy as np
-from scipy.interpolate import PchipInterpolator
+from scipy.interpolate import PchipInterpolator, CubicHermiteSpline
+
+
+def curve_spline(curve):
+    """Residuals of an existing cubic need their derivative to cancel it exactly."""
+    if 'derivative' in curve:
+        return CubicHermiteSpline(curve['target'], curve['delta'], curve['derivative'], extrapolate=False)
+    return PchipInterpolator(curve['target'], curve['delta'], extrapolate=False)
 
 
 @dataclass
@@ -35,7 +42,11 @@ class Piece:
             if ((x[0] > self.target[0] and abs(y[0]) > 1e-12)
                     or (x[-1] < self.target[-1] and abs(y[-1]) > 1e-12)):
                 raise ValueError("Поправка должна возвращаться к нулю на неподтверждённой границе.")
-            self._curves.append((x, PchipInterpolator(x, y, extrapolate=False)))
+            if 'derivative' in curve:
+                derivatives = np.asarray(curve['derivative'], dtype=float)
+                if derivatives.shape != x.shape or not np.isfinite(derivatives).all():
+                    raise ValueError('Некорректная производная микропоправки.')
+            self._curves.append((x, curve_spline(curve)))
         # Serialized reference nodes are the FINAL map. Retain the original
         # piecewise-linear base separately so cubic corrections do not smooth
         # untrusted base intervals or cross a rejected-anchor barrier.
@@ -163,4 +174,7 @@ class TimeMap:
 
     @classmethod
     def from_dict(cls, value):
+        if value.get('representation')=='pcm_overlap_add':
+            from .blend import BlendMap
+            return BlendMap(cls.from_dict(value['base']),value['sampling_layers'])
         return cls([Piece(p["target"], p["reference"], p.get("corrections", [])) for p in value["pieces"]], value.get("notes", []))

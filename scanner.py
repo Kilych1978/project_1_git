@@ -661,6 +661,9 @@ def create_output_directory(
         index += 1
     output_dir.mkdir(parents=True, exist_ok=False)
 
+    from diagnostics import register_output
+    register_output(output_dir)
+
     return output_dir
 
 

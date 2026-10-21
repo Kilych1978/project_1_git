@@ -10,7 +10,7 @@ import numpy as np
 
 from pcm_core.audio import probe
 from pcm_core.config import Settings
-from pcm_core.guard import cancel_unsafe_components, gate_micro, verify_candidate_pcm, render_verdict
+from pcm_core.guard import cancel_unsafe_components, gate_micro, verify_candidate_pcm, render_verdict, same_map
 from pcm_core.micro import Measurement, collect, refined_map
 from pcm_core.model import Piece, TimeMap
 from pcm_core.render import render
@@ -19,6 +19,27 @@ from .helpers import SR, soundtrack, warp, write_audio
 
 
 class PCMRecoveryTests(unittest.TestCase):
+    def test_cubic_with_equal_nodes_and_midpoints_is_still_changed_and_can_be_rolled_back(self):
+        t = np.array([0.,1.,2.])
+        curve = {'target':t.tolist(),'delta':[0.,0.,0.], 'derivative':[.001,.001,.001]}
+        candidate = TimeMap([Piece(t,t.copy(),[curve])])
+        base = TimeMap.affine(2.)
+        np.testing.assert_allclose(candidate.forward([0.,.5,1.,1.5,2.]),[0.,.5,1.,1.5,2.],atol=1e-12)
+        self.assertFalse(same_map(base,candidate))
+        restored,removed = cancel_unsafe_components(base,candidate,[.5],whole_components=True)
+        self.assertTrue(removed)
+        self.assertTrue(same_map(base,restored))
+
+    def test_repeated_failed_probe_does_not_multiply_rollback_into_good_audio(self):
+        t = np.array([0.,1.,5.,6.,8.,9.,13.,14.])
+        delta = np.array([0.,-.006,-.006,0.,0.,-.006,-.006,0.])
+        candidate = TimeMap([Piece(t,t+delta,[{'target':t.tolist(),'delta':delta.tolist()}])])
+        base = TimeMap.affine(14.)
+        once,_ = cancel_unsafe_components(base,candidate,[10.],.08)
+        many,_ = cancel_unsafe_components(base,candidate,[10.]*12,.08)
+        probes = np.linspace(0.,14.,1001)
+        np.testing.assert_allclose(once.forward(probes),many.forward(probes),atol=1e-12)
+
     def test_rf64_fact_uses_actual_frames_instead_of_24_hour_sentinel(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td)/'float.wav'
@@ -126,6 +147,27 @@ class PCMRecoveryTests(unittest.TestCase):
         self.assertTrue(any(r['status']=='CLOCK_GAP_PREDICTION' for r in audit))
         self.assertEqual(rows[5].status,'UNVERIFIABLE')
         np.testing.assert_allclose(final.forward([5.,5.5,6.])-[5.,5.5,6.],-.006,atol=1e-12)
+
+    def test_zoom_cancels_base_curvature_between_anchors_and_survives_serialization(self):
+        t = np.array([0., 1.1, 2.7, 4.3, 6.2, 8.])
+        delta = np.array([0., -.003, -.006, -.002, -.008, 0.])
+        base = TimeMap([Piece(t, t+delta, [{'target': t.tolist(), 'delta': delta.tolist()}])])
+        centers = np.arange(.5,7.6,.125)
+        desired = -.006-.001*(centers-4.)
+        rows = [Measurement(float(x), float(base.forward([x])[0]),
+                            float(d-(base.forward([x])[0]-x)), .99,.6,0.,3,1,'MEASURED','raw')
+                for x,d in zip(centers,desired)]
+        final = refined_map(base, rows, Settings(anchor_step=.125, max_rate_change=.08))
+        probes = np.arange(1.,7.,.00137)
+        expected = probes-.006-.001*(probes-4.)
+        np.testing.assert_allclose(final.forward(probes), expected, atol=1e-10)
+        restored = TimeMap.from_dict(final.to_dict())
+        np.testing.assert_allclose(restored.forward(probes), expected, atol=1e-10)
+        # Rollback must keep the exact verified base, and preserve a distant
+        # part of the new Hermite correction without silently refitting it.
+        rolled, _ = cancel_unsafe_components(base,final,[6.],.08,rollback_rate=.08)
+        np.testing.assert_allclose(rolled.forward([6.]),base.forward([6.]),atol=1e-10)
+        np.testing.assert_allclose(rolled.forward([1.]),final.forward([1.]),atol=1e-10)
 
 
 if __name__ == '__main__':

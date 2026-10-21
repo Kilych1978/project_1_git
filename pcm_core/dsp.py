@@ -10,7 +10,9 @@ def ncc_valid(search, template):
     if len(b) < 16 or len(a) < len(b):
         return np.empty(0)
     b = b - b.mean()
-    energy_b = np.dot(b, b)
+    # A one-dimensional reduction does not need a BLAS thread pool. On some
+    # Windows NumPy builds dot() starts many threads for every short PCM probe.
+    energy_b = np.sum(b * b, dtype=np.float64)
     if energy_b < 1e-16:
         return np.zeros(len(a) - len(b) + 1)
     cross = correlate(a, b, mode="valid", method="fft")
@@ -97,6 +99,8 @@ def mapped_window(source, mapping, ref_center, length, sample_rate, radius=16):
     # Round the REFERENCE start once. Returned start makes sample rounding explicit.
     start = int(round(ref_center * sample_rate - length / 2))
     ref_times = (start + np.arange(length)) / sample_rate
+    if hasattr(mapping,'sample'):
+        return mapping.sample(source,ref_times,sample_rate,radius),start
     if hasattr(mapping, 'inverse_with_rate'):
         source_times, step = mapping.inverse_with_rate(ref_times)
     else:
