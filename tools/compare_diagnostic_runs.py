@@ -38,7 +38,7 @@ def main():
         waves = []
         for run in (old,new):
             report = json.loads((run/f'{index:02d}'/'PCM_MICRO_REPORT.json').read_text())
-            waves.append(pcm(Path(report['output_file'])))
+            waves.append(pcm(Path(report['output_file'] or report.get('retained_file') or report['baseline_file'])))
         duration = min(map(len,[reference,original,*waves]))/48000
         mapping = TimeMap.affine(duration)
         settings = Settings(anchor_step=.125)
@@ -56,6 +56,10 @@ def main():
             item.update(before_median_ms=float(np.median(absolute[:,0])),
                         old_median_ms=float(np.median(absolute[:,1])),
                         new_median_ms=float(np.median(absolute[:,2])),
+                        new_max_ms=float(np.max(absolute[:,2])),
+                        new_within_sample=int(np.sum(absolute[:,2]<=1000/48000)),
+                        new_over_0_1_ms=int(np.sum(absolute[:,2]>.1)),
+                        new_over_1_ms=int(np.sum(absolute[:,2]>1.)),
                         improved_vs_old=int(np.sum(absolute[:,2]+1000/48000<absolute[:,1])),
                         worse_vs_old=int(np.sum(absolute[:,2]>absolute[:,1]+1000/48000)),
                         improved_vs_source=int(np.sum(absolute[:,2]+1000/48000<absolute[:,0])),

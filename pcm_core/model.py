@@ -8,6 +8,25 @@ import numpy as np
 from scipy.interpolate import PchipInterpolator, CubicHermiteSpline
 
 
+def _coalesce_roundoff_nodes(target,reference,*values):
+    """Join only float-roundoff neighbours, preserving both piece endpoints.
+
+    Independent grids can name the same time a few ULPs apart. Subtracting
+    and re-adding cubic corrections can round their output times identically.
+    A real flat/reversed interval or an edit-sized jump is never repaired here.
+    Keep the original spline coefficients; only redundant sampling knots go.
+    """
+    scale=np.maximum(1.,np.maximum(np.abs(target),np.abs(reference)))
+    tolerance=64*np.finfo(np.float64).eps*np.maximum(scale[:-1],scale[1:])
+    close=(np.diff(target)<=tolerance)&(np.abs(np.diff(reference))<=tolerance)
+    indices=np.flatnonzero(np.r_[True,~close])
+    if indices[-1]!=len(target)-1:
+        if len(indices)<2:
+            return (target,reference,*values)
+        indices[-1]=len(target)-1
+    return tuple(array[indices] for array in (target,reference,*values))
+
+
 def curve_spline(curve):
     """Residuals of an existing cubic need their derivative to cancel it exactly."""
     if 'derivative' in curve:
@@ -28,8 +47,10 @@ class Piece:
                 or len(self.target) < 2
                 or not np.isfinite(self.target).all()
                 or not np.isfinite(self.reference).all()
-                or not (np.diff(self.target) > 0).all()
-                or not (np.diff(self.reference) > 0).all()):
+                or not (np.diff(self.target) > 0).all()):
+            raise ValueError("Некорректная или немонотонная карта времени.")
+        self.target,self.reference=_coalesce_roundoff_nodes(self.target,self.reference)
+        if not (np.diff(self.reference)>0).all():
             raise ValueError("Некорректная или немонотонная карта времени.")
         self._curves = []
         for curve in self.corrections:
@@ -55,6 +76,7 @@ class Piece:
             knots = np.unique(np.r_[self.target, *[x for x, _ in self._curves]])
             baseline = np.interp(knots, self.target, self._base_reference)
             corrected = baseline + self.correction_at(knots)
+            knots,corrected,baseline=_coalesce_roundoff_nodes(knots,corrected,baseline)
             if not (np.diff(corrected) > 0).all():
                 raise ValueError("Микропоправка нарушила монотонность карты.")
             self.target, self.reference, self._base_reference = knots, corrected, baseline

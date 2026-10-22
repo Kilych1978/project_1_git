@@ -86,7 +86,12 @@ def verify_reference_grid(reference,target,base,proposal,settings,times,rendered
 
 def choose_local(reference,target,base,proposal,schedules,settings,reference_times,log=print,progress=None):
     """Only the extra curve may be rolled back. Base remains byte-for-byte defined."""
-    original = replace_map(base,proposal).validate(settings.max_rate_change)
+    if same_map(base,proposal):
+        return base,[],[]
+    try:
+        original = replace_map(base,proposal).validate(settings.max_rate_change)
+    except ValueError as exc:
+        return base,[],[{'status':'INVALID_OPTIONAL_MAP','reason':str(exc)}]
     candidate = original
     failed_times = set()
     history = []
@@ -112,9 +117,13 @@ def choose_local(reference,target,base,proposal,schedules,settings,reference_tim
             if attempt in (1,3,5,7,9):
                 failed_times = set(initial_failures)
             rate,scale,whole = strategies[attempt-1]
-            candidate,_ = cancel_unsafe_components(base,original,sorted(failed_times),
-                settings.max_rate_change,rollback_rate=rate,taper_scale=scale,
-                whole_components=whole,protected_half_window=protected_half_window)
+            try:
+                candidate,_ = cancel_unsafe_components(base,original,sorted(failed_times),
+                    settings.max_rate_change,rollback_rate=rate,taper_scale=scale,
+                    whole_components=whole,protected_half_window=protected_half_window)
+            except ValueError as exc:
+                history.append({'attempt':attempt,'status':'INVALID_OPTIONAL_ROLLBACK','reason':str(exc)})
+                continue
         if same_map(base,candidate):
             continue
         if progress is not None and hasattr(progress,'begin_pass'):

@@ -1,6 +1,7 @@
 """Fresh comparison plans and a protected best map; no previous-run loading."""
 from dataclasses import dataclass,replace
 import json
+import traceback
 import numpy as np
 from pcm_core.model import Piece,TimeMap
 from pcm_core.micro import collect
@@ -80,10 +81,39 @@ def build_best_plan(reference,target,base,initial_settings,output_dir,report,pro
                            native_preview_windows=rows)
     with (output_dir/'BASELINE_PCM_PLAN.json').open('w',encoding='utf-8') as file:
         json.dump(baseline_report,file,ensure_ascii=False,indent=2)
-    del baseline_report,old_holdouts,old_measurements,old_audit,rows
+    # Optional alternatives cannot discard an independently checked baseline.
+    # The returned map still must pass the real written-WAV checks in refiner.
+    del baseline_report,rows
+    try:
+        return _extend_plan(reference,target,base,initial_settings,output_dir,report,progress,planner,
+            tagged('УТОЧНЁННЫЙ ВАРИАНТ'),old,old_settings,old_schedules)
+    except Exception as exc:
+        detail=traceback.format_exc()
+        (output_dir/'PCM_OPTIONAL_FAILURE.txt').write_text(detail,encoding='utf-8')
+        with (output_dir/'FAILED_OPTIONAL_PLAN.json').open('w',encoding='utf-8') as file:
+            json.dump(report,file,ensure_ascii=False,indent=2)
+        report.update(optional_failure={'type':type(exc).__name__,'reason':str(exc),
+                                        'traceback_file':'PCM_OPTIONAL_FAILURE.txt'},
+                      optional_recovery='fresh_verified_pcm_baseline',
+                      measurements=[row.to_dict() for row in old_measurements],
+                      independent_windows=old_holdouts,audit=old_audit,
+                      selected_step_sec=old_settings.anchor_step,
+                      fine_map=old.to_dict(),baseline_fine_map=old.to_dict(),
+                      additional_improvement_confirmed=False)
+        schedules=merge_schedules(base,[old_schedules],initial_settings.verification_pcm16)
+        settings=replace(old_settings,verification_pcm16=initial_settings.verification_pcm16)
+        duration=min(len(reference),len(target))/settings.analysis_rate
+        fixed=np.arange(.25,duration-.25,.0625).tolist()
+        protection=ProtectedPlan(old,schedules,fixed,settings,False)
+        print('Ошибка дополнительного PCM-варианта:',exc)
+        print('Сохранён базовый PCM-план этого запуска; далее проверяется записанный WAV.')
+        return old,old_holdouts,old_measurements,settings,old_audit,schedules,protection
 
+
+def _extend_plan(reference,target,base,initial_settings,output_dir,report,progress,planner,
+                 modern_progress,old,old_settings,old_schedules):
     modern,holdouts,measurements,settings,audit,new_schedules = planner(
-        reference,target,base,initial_settings,report,tagged('УТОЧНЁННЫЙ ВАРИАНТ'))
+        reference,target,base,initial_settings,report,modern_progress)
     schedules = merge_schedules(base,[old_schedules,new_schedules],initial_settings.verification_pcm16)
     settings = replace(settings,max_rate_change=max(settings.max_rate_change,old_settings.max_rate_change))
     duration = min(len(reference),len(target))/settings.analysis_rate
@@ -137,6 +167,7 @@ def build_best_plan(reference,target,base,initial_settings,output_dir,report,pro
             callback.finish()
             dense_rows.sort(key=lambda row:row.target_time)
             centers+=extra
+        report['residual_clock_measurements']=[row.to_dict() for row in dense_rows]
         dense_times=sorted(set(probes+centers))
         callback=progress('ПРОВЕРКА БАЗОВОЙ КАРТЫ НА НОВЫХ ТОЧКАХ PCM',target_times=dense_times)
         source_check.extend(verify_candidate_pcm(reference,target,base,old,zoom,target_times=dense_times,progress=callback))
@@ -188,6 +219,52 @@ def build_best_plan(reference,target,base,initial_settings,output_dir,report,pro
         callback.finish()
         report.update(residual_clock_measurements=[row.to_dict() for row in dense_rows],
                       residual_choice_audit=dense_history)
+        # A second measurement phase uses the already scheduled holdout times.
+        # It can resolve holes left by the original phase, and lets strong
+        # independently agreeing frequency bands propose the same source clock.
+        # The established candidate is the protected base of this addition.
+        preserved,previous_checks=selected,checked
+        try:
+            difficult=[row.target_time for row in dense_rows if row.status!='MEASURED'
+                       or not row.method.startswith('raw')]
+            if difficult:
+                existing={round(row.target_time,9) for row in dense_rows}
+                trouble=np.asarray(sorted(difficult))
+                phase=[]
+                for t in sorted(set(probes)):
+                    index=np.searchsorted(trouble,t)
+                    near=trouble[max(0,index-1):index+1]
+                    if round(t,9) not in existing and len(near) and np.min(np.abs(near-t))<=.251:
+                        phase.append(t)
+                if phase:
+                    callback=progress('ДОИЗМЕРЕНИЕ ПРОПУЩЕННЫХ PCM-ОТРЕЗКОВ | сдвинутая сетка',target_times=phase)
+                    extra=collect(reference,target,base,zoom,log=lambda _:None,progress=callback,centers=phase)
+                    callback.finish()
+                    combined=sorted([*dense_rows,*extra],key=lambda row:row.target_time)
+                    report['phase_clock_measurements']=[row.to_dict() for row in extra]
+                    proposal=affine_patches(combined,selected,settings.analysis_rate,coherent_gaps=True)
+                    callback=progress('ПРОВЕРКА ДОПОЛНИТЕЛЬНЫХ PCM-ОТРЕЗКОВ | сдвинутая сетка')
+                    selected,checked,phase_history=gate_patches(reference,target,selected,proposal,
+                        schedules,zoom,reference_times,progress=callback)
+                    callback.finish()
+                    report['phase_choice_audit']=phase_history
+                    # A longer coherent clock may disambiguate a short local
+                    # waveform. It is only a proposal: all unchanged native
+                    # gates still apply, including every intervening window.
+                    preserved,previous_checks=selected,checked
+                    proposal=affine_patches(combined,selected,settings.analysis_rate,
+                        coherent_gaps=True,max_anchor_gap=.501,min_band_score=.85)
+                    callback=progress('ПРОВЕРКА ОБЩЕЙ СКОРОСТИ ОТРЕЗКА | дополнительные PCM-якоря')
+                    selected,checked,context_history=gate_patches(reference,target,selected,proposal,
+                        schedules,zoom,reference_times,progress=callback)
+                    callback.finish()
+                    report['context_choice_audit']=context_history
+        except Exception as exc:
+            selected,checked=preserved,previous_checks
+            (output_dir/'PCM_PHASE_FAILURE.txt').write_text(traceback.format_exc(),encoding='utf-8')
+            report['phase_failure']={'type':type(exc).__name__,'reason':str(exc),
+                                     'traceback_file':'PCM_PHASE_FAILURE.txt'}
+            print('Дополнительная сетка PCM отклонена; предыдущий проверенный план сохранён:',exc)
         settings=zoom
     additional = not same_map(old,selected)
     report.update(baseline_fine_map=old.to_dict(),fine_map=selected.to_dict(),

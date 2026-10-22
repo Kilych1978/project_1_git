@@ -51,6 +51,7 @@ def main():
     zero = {'target_time': t, 'reference_time': t.copy(), 'offset': np.zeros_like(t),
             'confidence': np.ones_like(t)}
     baseline = {'output_path': target.path, 'encoder': 'copy', 'segments': [],
+                'output_created': False, 'uses_original_directly': True,
                 'copied_without_reencode': True, 'verified_first_channel_pcm': analysis['target_pcm'],
                 'codec_plan': {'source_codec': target.codec_name, 'encoder': 'copy',
                                'pcm_fallback': False, 'container': target.format_name}}
@@ -64,7 +65,8 @@ def main():
     progress = Progress()
     progress.stage('СОХРАНЕНИЕ ПРОВЕРЕННОГО РЕЗУЛЬТАТА')
     snapshot = {'reference_file': str(reference.path), 'target_file': str(target.path),
-                'output_file': str(result['output_path']), 'mode': 'micro-only',
+                'output_file': report['output_file'], 'retained_file': str(result['output_path']),
+                'output_created': report['output_created'], 'mode': 'micro-only',
                 'pcm_micro_refinement': report,
                 'target_time': final_map['target_time'].tolist(),
                 'reference_time': final_map['reference_time'].tolist(),
@@ -81,7 +83,13 @@ def main():
     print('ФИНАЛЬНЫЙ РЕЗУЛЬТАТ')
     print('=' * 78)
     print(report['reason'])
-    print('Итоговый файл:', result['output_path'])
+    if report['output_created']:
+        print('Итоговый файл:', result['output_path'])
+    else:
+        print('Улучшение не подтверждено. Новый аудиофайл не создан.')
+        print('Исходная дорожка:', result['output_path'])
+        if report['status'] == 'BASELINE_KEPT_ERROR':
+            print('PCM-уточнение завершилось ошибкой; подробности: PCM_ERROR_TRACEBACK.txt.')
     print('Отчёты:', output)
     print('Подтверждённых изменённых окон:', len(rows))
     if rows and report['status'] == 'PCM_REFINED':

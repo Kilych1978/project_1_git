@@ -1,0 +1,36 @@
+PASS: test_independent_search
+[ 60.00%] Надёжные якоря: 2 | отброшены одиночные STRONG-скачки: 1
+[100.00%] Confidence-aware analysis завершён
+
+==============================================================================
+ПОСТРОЕНИЕ CONFIDENCE-AWARE MAP
+==============================================================================
+[ 80.00%] Map points: 1,256
+[100.00%] Confidence-aware map готова
+PASS: test_singleton_strong_jump_is_rejected
+
+==============================================================================
+ЗАЩИТА ОТ РЕГРЕССИЙ: DENSE GRID
+==============================================================================
+[ 85.00%] Runs=0 | accepted=0/9 | max candidate=0.003700s | max safe=0.000000s
+[100.00%] Защита от регрессий завершена: NO_CHANGE
+PASS: test_already_synced_micro_correction_is_suppressed
+
+==============================================================================
+ЗАЩИТА ОТ РЕГРЕССИЙ: DENSE GRID
+==============================================================================
+[ 85.00%] Runs=1 | accepted=9/9 | max candidate=0.018000s | max safe=0.018000s
+[100.00%] Защита от регрессий завершена: FULL_CANDIDATE
+PASS: test_meaningful_correction_is_kept
+PASS: test_render_comparison_detects_local_regression
+
+==============================================================================
+ЗАЩИТА ОТ РЕГРЕССИЙ: DENSE GRID
+==============================================================================
+[ 85.00%] Runs=0 | accepted=0/9 | max candidate=0.003701s | max safe=0.000000s
+[100.00%] Защита от регрессий завершена: NO_CHANGE
+PASS: test_user_3318_micro_regression_case
+PASS: test_render_guard_zero_map_threshold_import
+PASS: test_report_translation_is_russian
+PASS: test_confirmed_discrepancy_is_exportable
+ALL v6.8.2 SELF TESTS PASSED

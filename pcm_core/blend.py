@@ -75,14 +75,22 @@ class BlendMap:
         # Conservative: cancellation of nominal delays cannot hide a blend.
         a=self.base.inverse(ref_times);b=other.inverse(ref_times)
         extent=np.nan_to_num(np.abs(a-b),nan=0.)
+        if isinstance(self.base,BlendMap) and self.base is not other:
+            # A later refinement must not hide PCM changes in its preserved
+            # inner layer merely because the nominal clock is unchanged.
+            extent+=self.base.extent(other,ref_times)
         for layer in self.local_layers(ref_times):
             aligned=(np.asarray(ref_times)-layer['offset'])/layer['rate']
             extent+=self.weight(layer,ref_times)*np.nan_to_num(np.abs(aligned-a),nan=0.)
         return float(np.max(extent)) if len(extent) else 0.
 
-    def reduced(self,bad_reference_times,half_window=.06):
+    def reduced(self,bad_reference_times,half_window=.06,protected_base=None):
         layers=[];removed=[]
         bad_times=np.sort(np.asarray(bad_reference_times))
+        base=self.base
+        if protected_base is not None and isinstance(base,BlendMap) and base is not protected_base:
+            base,inner_removed=base.reduced(bad_reference_times,half_window,protected_base)
+            removed.extend(inner_removed)
         for layer in self.layers:
             x=np.asarray(layer['reference']);w=np.asarray(layer['weight'])
             bad=bad_times[np.searchsorted(bad_times,x[0]-half_window):
@@ -99,14 +107,15 @@ class BlendMap:
                 x,w=points,weights
             if np.max(w)>0:
                 layers.append({**layer,'reference':x.tolist(),'weight':w.tolist()})
-        return (BlendMap(self.base,layers) if layers else self.base),removed
+        return (BlendMap(base,layers) if layers else base),removed
 
     def to_dict(self):
         return {'representation':'pcm_overlap_add','base':self.base.to_dict(),
                 'sampling_layers':self.layers,'notes':self.notes}
 
 
-def affine_patches(measurements,base,sample_rate):
+def affine_patches(measurements,base,sample_rate,coherent_gaps=False,
+                   max_anchor_gap=.251,min_band_score=.95):
     """Consecutive independently measured anchors supporting one source clock."""
     runs=[];run=[]
     tolerance=max(2/sample_rate,.00008)
@@ -120,10 +129,16 @@ def affine_patches(measurements,base,sample_rate):
             if error<=tolerance and abs(slope)<=.003:
                 runs.append((list(run),1+slope,offset,error))
     for row in measurements:
-        good=(row.status=='MEASURED' and row.correction_sec is not None and row.score>=.85 and row.method.startswith('raw'))
+        good=(row.status=='MEASURED' and row.correction_sec is not None and row.score>=.85
+              and (row.method.startswith('raw') or
+                   (coherent_gaps and row.method.startswith('multiband') and row.score>=min_band_score)))
         if not good:
+            if coherent_gaps and row.status=='UNVERIFIABLE':
+                # This only proposes an interval between independently fitted
+                # anchors. Every intervening PCM window still gates the patch.
+                continue
             commit();run=[];continue
-        if run and (row.target_time-run[-1].target_time>.126 or
+        if run and (row.target_time-run[-1].target_time>(max_anchor_gap if coherent_gaps else .126) or
                     abs((row.reference_time+row.correction_sec-row.target_time)-
                         (run[-1].reference_time+run[-1].correction_sec-run[-1].target_time))>.001):
             commit();run=[]

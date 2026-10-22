@@ -1,0 +1,14 @@
+PASS: test_micro_search_recovers_known_shift
+
+==============================================================================
+МИКРО-УТОЧНЕНИЕ ФОРМЫ ВОЛНЫ
+==============================================================================
+[  8.33%] Проверка микросовмещения | t=00:00:01
+[100.00%] Проверка микросовмещения | t=00:00:06
+
+PASS: test_micro_refinement_keeps_true_local_shift
+PASS: test_micro_candidate_must_reduce_measured_error
+PASS: test_micro_score_gain_cannot_override_timing_worsening
+PASS: test_micro_large_jump_is_rejected
+PASS: test_report_translation_has_no_known_english_fragments
+ALL v6.9.1 MICRO SELF TESTS PASSED

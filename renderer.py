@@ -763,32 +763,32 @@ def copy_target_without_reencode(
     codec_plan: dict,
     output_dir: Path,
 ):
-    """Точная копия уже синхронного TARGET без повторного кодирования."""
-    # Even an undecodable-to-original-codec format can be copied exactly
-    # when the map is zero. A fallback encoder is relevant only to rendering.
+    """Keep the original as the analysis baseline; create no duplicate audio.
+
+    The historical function name and copied_without_reencode flag remain for
+    callers that use them to select the original stream index.
+    """
     codec_plan = {**codec_plan, "encoder": "copy", "pcm_fallback": False,
                   "container": target.format_name, "extension": target.path.suffix}
-    output_path = output_dir / (target.path.stem + RENDER_OUTPUT_SUFFIX + target.path.suffix)
-    import shutil
-    started = time.time()
-    shutil.copy2(target.path, output_path)
-    elapsed = time.time() - started
+    output_path = target.path
+    elapsed = 0.0
 
     report_path = output_dir / RENDER_REPORT
     with report_path.open("w", encoding="utf-8") as file:
         file.write("FINAL AUDIO RENDER\n")
         file.write("=" * 78 + "\n\n")
         file.write(f"SOURCE TARGET:\n{target.path}\n\n")
-        file.write(f"OUTPUT:\n{output_path}\n\n")
+        file.write("OUTPUT: NOT CREATED\n")
+        file.write(f"RETAINED SOURCE:\n{output_path}\n\n")
         file.write(f"SOURCE CODEC: {target.codec_name}\n")
         file.write("OUTPUT ENCODER: copy\n")
         file.write(f"OUTPUT CONTAINER: {codec_plan.get('container')}\n")
         file.write("PCM LOSSLESS FALLBACK: False\n")
-        file.write("FORMAT DECISION: Exact copy; no re-encoding because the non-regression guard found no safe timing correction.\n")
+        file.write("FORMAT DECISION: No confirmed timing improvement; the original is used directly without copying or re-encoding.\n")
         file.write("SEGMENTS: 0\n")
         file.write("CONCAT LATENCY COMPENSATION: 0.000000000 s (no render)\n")
         file.write("MAX MAP APPROXIMATION ERROR: 0.000000000 s\n")
-        file.write(f"COPY TIME: {elapsed:.3f} s\n\n")
+        file.write("Улучшение не подтверждено. Новый аудиофайл не создан.\n\n")
         file.write("The original TARGET was not modified.\n")
 
     return {
@@ -799,6 +799,8 @@ def copy_target_without_reencode(
         "report_path": report_path,
         "codec_plan": codec_plan,
         "copied_without_reencode": True,
+        "output_created": False,
+        "uses_original_directly": True,
     }
 
 

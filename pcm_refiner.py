@@ -9,6 +9,7 @@ import csv
 from dataclasses import asdict, replace
 import json
 import time
+import traceback
 import wave
 import zipfile
 from pathlib import Path
@@ -562,8 +563,15 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
                 if not bad:
                     break
                 rollback_base = protection.baseline if protection is not None else base
-                reduced, removed = cancel_unsafe_components(rollback_base, fine, [r['target_time'] for r in bad],
-                                                            settings.max_rate_change)
+                half_window=max(r.get('window_sec',r.get('verification_window_sec',.125))/2+.001 for r in bad)
+                if hasattr(fine,'reduced'):
+                    # Absolute-reference probes and source probes use different
+                    # source centers. Their actual output windows share this clock.
+                    reduced,removed=fine.reduced([r['reference_time'] for r in bad],half_window,
+                                                 protected_base=rollback_base)
+                else:
+                    reduced, removed = cancel_unsafe_components(rollback_base, fine, [r['target_time'] for r in bad],
+                        settings.max_rate_change,protected_half_window=half_window)
                 if not removed or same_map(base, reduced):
                     break
                 audit.append({'status': 'ACTUAL_LOCAL_CANCEL', 'attempt': attempt + 1,
@@ -593,6 +601,7 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
                                    'Подтверждённое PCM-микроуточнение; сжатый исходник сохранён в PCM WAV.')}
                 render_result = {**render_result, 'output_path': destination, 'encoder': encoder,
                                  'codec_plan': plan, 'copied_without_reencode': False,
+                                 'output_created': True, 'uses_original_directly': False,
                                  'coarse_output_path': baseline_path, 'pcm_refined': True}
                 # Preserve the nominal clock composition. An overlap-add PCM
                 # plan has several source positions at a crossfade; its exact
@@ -617,7 +626,10 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
         coarse_map, render_result = original_map, original_result
         if published_candidate is not None:
             published_candidate.unlink(missing_ok=True)
-        report.update(status='BASELINE_KEPT_ERROR', reason=str(exc))
+        detail=traceback.format_exc()
+        (output_dir/'PCM_ERROR_TRACEBACK.txt').write_text(detail,encoding='utf-8')
+        report.update(status='BASELINE_KEPT_ERROR', reason=str(exc),
+                      error_type=type(exc).__name__,traceback_file='PCM_ERROR_TRACEBACK.txt')
         report['output_file'] = str(baseline_path)
     finally:
         if candidate_path is not None:
@@ -685,6 +697,10 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
         for r in report['remaining_windows']])
     if report['status'] == 'PCM_REFINED':
         report['output_codec'] = candidate_info.codec
+    report['output_created'] = not bool(render_result.get('copied_without_reencode'))
+    report['retained_file'] = str(render_result['output_path'])
+    if not report['output_created']:
+        report['output_file'] = None
     report['selected_settings'] = asdict(settings)
     report['elapsed_sec'] = time.monotonic()-started
     with (output_dir / 'PCM_MICRO_REPORT.json').open('w', encoding='utf-8') as file:
@@ -695,7 +711,9 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
             f"Независимых проверок: {len(holdouts)}", f"Проверок записанного файла: {len(actual_rows)}",
             f"Применено микроуточнение: {'да' if report['status'] == 'PCM_REFINED' else 'нет'}",
             f"Формат результата: {report.get('output_codec', render_result.get('encoder', 'исходный'))}",
-            f"Итоговый файл: {report['output_file']}", '',
+            (f"Итоговый файл: {report['output_file']}" if report['output_created'] else
+             'Улучшение не подтверждено. Новый аудиофайл не создан.'),
+            f"Используемая дорожка: {report['retained_file']}", '',
             'Измерения относятся только к проверенным окнам с общим звуком.',
             'Тишина и различающийся звук не подтверждают точность синхронизации.',
             'Исходная дорожка не изменена.']

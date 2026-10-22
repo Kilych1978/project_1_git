@@ -1,0 +1,18 @@
+test_all_rejected_passes_and_safe_but_unimproved_render_leave_no_audio_copy (tests.test_oct22_regressions.Oct22RegressionTests.test_all_rejected_passes_and_safe_but_unimproved_render_leave_no_audio_copy) ... ok
+test_coherent_band_anchors_can_bridge_one_unknown_but_not_an_edit (tests.test_oct22_regressions.Oct22RegressionTests.test_coherent_band_anchors_can_bridge_one_unknown_but_not_an_edit) ... ok
+test_failed_extra_phase_keeps_the_prior_pcm_gain_in_the_written_wav (tests.test_oct22_regressions.Oct22RegressionTests.test_failed_extra_phase_keeps_the_prior_pcm_gain_in_the_written_wav) ... ok
+test_failed_optional_planner_still_writes_and_verifies_the_baseline_wav (tests.test_oct22_regressions.Oct22RegressionTests.test_failed_optional_planner_still_writes_and_verifies_the_baseline_wav) ... ok
+test_nested_patch_changes_remain_visible_to_validation_and_cache (tests.test_oct22_regressions.Oct22RegressionTests.test_nested_patch_changes_remain_visible_to_validation_and_cache) ... ok
+test_no_gain_creates_only_a_report_and_references_the_original (tests.test_oct22_regressions.Oct22RegressionTests.test_no_gain_creates_only_a_report_and_references_the_original) ... ok
+test_optional_rollback_exception_does_not_escape_selection (tests.test_oct22_regressions.Oct22RegressionTests.test_optional_rollback_exception_does_not_escape_selection) ... ok
+test_report_roundoff_pair_at_40_minutes_is_not_a_real_time_reversal (tests.test_oct22_regressions.Oct22RegressionTests.test_report_roundoff_pair_at_40_minutes_is_not_a_real_time_reversal) ... ok
+test_roundoff_merge_keeps_the_exact_cubic_and_real_edit_checks (tests.test_oct22_regressions.Oct22RegressionTests.test_roundoff_merge_keeps_the_exact_cubic_and_real_edit_checks) ... ok
+test_selected_output_is_at_root_and_rejected_files_never_include_source (tests.test_oct22_regressions.Oct22RegressionTests.test_selected_output_is_at_root_and_rejected_files_never_include_source) ... ok
+test_two_pcm_layers_write_the_same_s16_samples_on_all_six_channels (tests.test_oct22_regressions.Oct22RegressionTests.test_two_pcm_layers_write_the_same_s16_samples_on_all_six_channels) ... ok
+test_unchanged_pcm_report_does_not_call_the_source_a_new_output (tests.test_oct22_regressions.Oct22RegressionTests.test_unchanged_pcm_report_does_not_call_the_source_a_new_output) ... ok
+test_decoded_failure_removes_only_its_component_and_rerenders_baseline (tests.test_modular_fix.ModularFixTests.test_decoded_failure_removes_only_its_component_and_rerenders_baseline) ... ok
+
+----------------------------------------------------------------------
+Ran 13 tests in 13.839s
+
+OK

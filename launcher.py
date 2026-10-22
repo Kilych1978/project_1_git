@@ -964,7 +964,9 @@ def main():
     final_json = {
         "reference_file": str(selected.reference.path),
         "target_file": str(selected.target.path),
-        "output_file": str(rendered_path),
+        "output_file": None if render_result.get('copied_without_reencode') else str(rendered_path),
+        "retained_file": str(rendered_path),
+        "output_created": not bool(render_result.get('copied_without_reencode')),
         "reference_duration": float(selected.reference.duration),
         "target_duration": float(selected.target.duration),
         "output_duration": float(rendered_info.duration),
@@ -1045,7 +1047,7 @@ def main():
     print("Robust verdict :", robust_result["quality"]["verdict"])
     print(f"Robust score   : {robust_result['quality']['score']:.2f}/100")
     print()
-    print("Final output:")
+    print("Исходная дорожка:" if render_result.get('copied_without_reencode') else "Final output:")
     print(rendered_path)
     print()
     print("Output format:", rendered_info.codec_name, rendered_info.sample_rate, "Hz", rendered_info.channels, "ch")
@@ -1068,7 +1070,9 @@ def main():
     print()
     print("Исходный TARGET НЕ изменён.")
     if render_result.get('copied_without_reencode'):
-        print("Безопасное улучшение не подтверждено. Создана точная копия исходной дорожки.")
+        print("Улучшение не подтверждено. Новый аудиофайл не создан.")
+        if pcm_report['status'] == 'BASELINE_KEPT_ERROR':
+            print("PCM-уточнение завершилось ошибкой; подробности: PCM_ERROR_TRACEBACK.txt.")
     else:
         print("Готовый файл создан отдельно; результат проверок приведён в отчётах.")
     print()

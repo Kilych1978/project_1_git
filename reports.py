@@ -34,6 +34,10 @@ def _translate_report_line_to_russian(line: str) -> str:
     )
 
     exact = {
+        "OUTPUT: NOT CREATED": "ВЫХОДНОЙ ФАЙЛ: НЕ СОЗДАН",
+        "RETAINED SOURCE:": "СОХРАНЁННЫЙ ИСХОДНИК:",
+        "FORMAT DECISION: No confirmed timing improvement; the original is used directly without copying or re-encoding.":
+            "РЕШЕНИЕ ПО ФОРМАТУ: улучшение не подтверждено; исходник используется напрямую, без копирования и перекодирования.",
         "FINAL AUDIO RENDER": "ФИНАЛЬНЫЙ РЕНДЕР АУДИО",
         "FINAL RENDERED AUDIO VALIDATION": "ФИНАЛЬНАЯ ПРОВЕРКА ГОТОВОЙ АУДИОДОРОЖКИ",
         "INDEPENDENT AUDIO SYNC VALIDATION": "НЕЗАВИСИМАЯ ПРОВЕРКА СИНХРОНИЗАЦИИ АУДИО",

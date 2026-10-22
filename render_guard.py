@@ -445,6 +445,34 @@ def _write_pass_summary(pass_dir: Path, pass_index: int, comparison: dict, quara
     return path
 
 
+def _discard_rejected_files(result,guard_root,source):
+    """Only this run's generated rejected WAV/PCM files may be removed."""
+    removed=[]
+    guard_root=guard_root.resolve()
+    source=source.resolve()
+    for key in ('output_path','verified_first_channel_pcm'):
+        if not result.get(key):continue
+        path=Path(result[key])
+        resolved=path.resolve()
+        if resolved!=source and resolved.is_relative_to(guard_root) and path.is_file():
+            path.unlink()
+            removed.append(str(path))
+    return removed
+
+
+def _publish_guard_output(result,output_dir,source):
+    """Keep the selected audio at the result root, with no overwriting."""
+    path=Path(result['output_path'])
+    guard_root=(output_dir/'_render_guard').resolve()
+    if path.resolve()==source.resolve() or not path.resolve().is_relative_to(guard_root):
+        return
+    destination=output_dir/path.name
+    if destination.exists():
+        raise RuntimeError('Путь итогового аудио уже занят; перезапись отменена: '+str(destination))
+    path.rename(destination)
+    result['output_path']=destination
+
+
 def run_render_aware_safety_loop(
     selected,
     analysis,
@@ -472,6 +500,7 @@ def run_render_aware_safety_loop(
     final_render = None
     final_comparison = None
     final_safe_map = current_safe_map
+    selected_safe_result = False
 
     guard_root = output_dir / "_render_guard"
     guard_root.mkdir(parents=True, exist_ok=True)
@@ -611,8 +640,17 @@ def run_render_aware_safety_loop(
         final_comparison = comparison
         final_safe_map = current_safe_map
 
-        if comparison["passed"]:
+        if comparison["passed"] and (comparison['improvement_count'] > 0
+                                     or render_result.get('copied_without_reencode')):
+            selected_safe_result = True
             print(f"\n{context}: проверка пройдена.")
+            break
+
+        pass_records[-1]['rejected_files_removed']=_discard_rejected_files(
+            render_result,guard_root,selected.target.path)
+        if comparison['passed']:
+            pass_records[-1]['selection_reason'] = 'NO_CONFIRMED_IMPROVEMENT'
+            print(f"\n{context}: улучшение не подтверждено; аудиокандидат удалён.")
             break
 
         bad_times = [row["target_time_sec"] for row in comparison["regressions"]]
@@ -645,11 +683,11 @@ def run_render_aware_safety_loop(
             RENDER_GUARD_QUARANTINE_RADIUS_SEC,
         )
 
-    passed = bool(final_comparison and final_comparison["passed"])
+    passed = selected_safe_result
     if not passed:
         print("\nРЕНДЕР: ПРОВЕРКА ИСХОДНОЙ ДОРОЖКИ ПОСЛЕ ОТМЕНЫ ОСНОВНОЙ КАРТЫ")
         print("Далее PCM-уточнение сможет независимо исправить остаточные сдвиги.")
-        # Last safety net: exact original TARGET copy.
+        # Last safety net: use the original TARGET directly, without a copy.
         fallback_dir = guard_root / "fallback_baseline"
         fallback_dir.mkdir(parents=True, exist_ok=True)
         final_safe_map = build_zero_sync_map(selected.target.duration)
@@ -719,6 +757,11 @@ def run_render_aware_safety_loop(
         final_render["fallback_to_baseline"] = False
         final_render["guard_passed"] = True
 
+    selected_pass_path=str(final_render['output_path'])
+    _publish_guard_output(final_render,output_dir,selected.target.path)
+    for record in pass_records:
+        if record['output']==selected_pass_path:
+            record['output']=str(final_render['output_path'])
     report = {
         "passed": bool(final_render.get("guard_passed", False)),
         "fallback_to_baseline": bool(final_render.get("fallback_to_baseline", False)),
@@ -735,6 +778,7 @@ def run_render_aware_safety_loop(
         "micro_considered_points": int((final_comparison or {}).get("micro", {}).get("considered_points", 0)),
         "pass_records": pass_records,
         "render_output": str(final_render["output_path"]),
+        "output_created": not bool(final_render.get('copied_without_reencode')),
     }
 
     json_path = output_dir / RENDER_GUARD_JSON
@@ -771,8 +815,9 @@ def run_render_aware_safety_loop(
                     f"{row['rendered_error_sec']*1000.0:.3f} мс\n"
                 )
 
-        if report["fallback_to_baseline"]:
-            file.write("\nИсходный TARGET сохранён в качестве окончательного результата.\n")
+        if not report['output_created']:
+            file.write("\nУлучшение не подтверждено. Новый аудиофайл не создан.\n")
+            file.write("Исходный TARGET используется напрямую; PCM-уточнение проверяется отдельно.\n")
         else:
             file.write("\nГотовый файл прошёл проверку реального рендера без материального ухудшения вне допустимой погрешности.\n")
 

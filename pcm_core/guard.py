@@ -51,9 +51,10 @@ def _signature(mapping, t, settings):
     if hasattr(mapping,'layers'):
         import json
         center=float(mapping.forward([t])[0])
-        local=[layer for layer in mapping.layers if
-               layer['reference'][0]<=center+span and layer['reference'][-1]>=center-span]
+        local=mapping.local_layers([center-span,center+span])
         digest.update(json.dumps(local,sort_keys=True).encode())
+        if hasattr(mapping.base,'layers'):
+            digest.update(_signature(mapping.base,t,settings))
     for part in parts:
         digest.update(struct.pack('<Q', len(part)))
         digest.update(part)
@@ -324,7 +325,7 @@ def cancel_unsafe_components(base, candidate, bad_times, max_rate_change=.02, wh
 
     if hasattr(candidate,'reduced'):
         reference_times=candidate.base.forward(np.asarray(bad_times))
-        return candidate.reduced(reference_times,protected_half_window)
+        return candidate.reduced(reference_times,protected_half_window,protected_base=base)
 
     def active_intervals(y, derivative=None):
         active = (np.abs(y[:-1]) > 1e-12) | (np.abs(y[1:]) > 1e-12)
