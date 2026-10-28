@@ -1,0 +1,74 @@
+{
+  "report_version": "6.9.8",
+  "report_mode": "micro_launcher",
+  "archive_count": 5,
+  "verified_original_files": 19,
+  "full_run_rejected_additions": {
+    "raw": {
+      "last_bad_windows": 6,
+      "last_improved_points": 91643
+    },
+    "shifted_grid": {
+      "last_bad_windows": 10,
+      "last_improved_points": 102433
+    },
+    "context_clock": {
+      "last_bad_windows": 15,
+      "last_improved_points": 104809
+    }
+  },
+  "source_clip_fingerprints_match_previous_uploads": 10,
+  "old_map_native_wav_matches_user_output": {
+    "intervals": 10,
+    "max_sample_difference": 0,
+    "checked_interior_margin_sec": 0.35
+  },
+  "new_local_native_check": {
+    "points": [
+      {
+        "reference_time_sec": 448.755,
+        "current": {
+          "residual_ms": -10.707617499003188,
+          "score": 0.9975264285376128,
+          "margin": 0.5626842127621381
+        },
+        "candidate": {
+          "residual_ms": -0.00030726581885668713,
+          "score": 0.9993816190978545,
+          "margin": 0.4437705876204351
+        }
+      },
+      {
+        "reference_time_sec": 3125.916,
+        "current": {
+          "residual_ms": -5.01715394233598,
+          "score": 0.8912786550428765,
+          "margin": 0.5472202291578763
+        },
+        "candidate": {
+          "residual_ms": -0.007435763888887929,
+          "score": 0.9912340160747056,
+          "margin": 0.6864044027616235
+        }
+      },
+      {
+        "reference_time_sec": 3135.301,
+        "current": {
+          "residual_ms": -5.656523248007623,
+          "score": 0.98349103494885,
+          "margin": 0.36020573656279997
+        },
+        "candidate": {
+          "residual_ms": 0.00468512815272959,
+          "score": 0.9945478782817523,
+          "margin": 0.3867872289755524
+        }
+      }
+    ],
+    "probe_count": 4848,
+    "bad_count": 0,
+    "scope": "only 13 supplied intervals on the full movie clock",
+    "full_movie_new_output_tested": false
+  },
+  "note": "Full-run source clocks and anchors retained. Audio checks cover supplied intervals only. User audio and private paths excluded."
+}

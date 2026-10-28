@@ -1,6 +1,6 @@
-# Сборка Modular 6.9.8
+# Сборка Modular 6.9.9
 
-[Скачать ZIP](https://raw.githubusercontent.com/Kilych1978/project_1_git/refs/heads/main/releases/Universal_Audio_Waveform_Sync_modular_v6.9.8.zip)
+[Скачать ZIP](https://raw.githubusercontent.com/Kilych1978/project_1_git/refs/heads/main/releases/Universal_Audio_Waveform_Sync_modular_v6.9.9.zip)
 
 Скачайте архив и распакуйте в новую папку. Инструкция внутри — README_RU.md.
 Контрольная сумма находится рядом в файле `.zip.sha256`.
@@ -13,6 +13,8 @@
 
 Если улучшение не подтверждено, новый аудиофайл не создаётся: остаются
 исходник и отчёты. Сбой на длинной карте времени исправлен.
+В 6.9.9 добавлена изоляция проблемных участков вместо немедленного отказа
+от всей дополнительной карты после шести проходов.
 
 Для диагностики конкретных мест без полного прогона — `DIAGNOSE_POINTS.cmd`.
 Архивы `REPORT_BUNDLE*.zip` создаются автоматически, каждый не больше 25 МиБ;

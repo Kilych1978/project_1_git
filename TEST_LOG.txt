@@ -14,6 +14,9 @@ test_native_file_keeps_old_good_scene_and_adds_new_improvement (tests.test_best_
 test_pcm_patches_preserve_bad_scene_and_render_identical_weights_on_all_channels (tests.test_best_plan.BestPlanTests.test_pcm_patches_preserve_bad_scene_and_render_identical_weights_on_all_channels) ... ok
 test_pcm_result_does_not_collide_with_accepted_coarse_wav (tests.test_best_plan.BestPlanTests.test_pcm_result_does_not_collide_with_accepted_coarse_wav) ... ok
 test_wide_window_smear_still_reaches_short_waveform_patch_search (tests.test_best_plan.BestPlanTests.test_wide_window_smear_still_reaches_short_waveform_patch_search) ... ok
+test_bad_window_removes_every_island_it_intersects (tests.test_component_retention.ComponentRetentionTests.test_bad_window_removes_every_island_it_intersects) ... ok
+test_exhausted_gate_retains_and_rechecks_distant_good_pcm_in_native_wav (tests.test_component_retention.ComponentRetentionTests.test_exhausted_gate_retains_and_rechecks_distant_good_pcm_in_native_wav) ... ok
+test_support_islands_are_sample_identical_and_keep_local_cache (tests.test_component_retention.ComponentRetentionTests.test_support_islands_are_sample_identical_and_keep_local_cache) ... ok
 test_complete_bundle_contains_final_map_logs_and_clips_without_full_audio (tests.test_diagnostics.DiagnosticTests.test_complete_bundle_contains_final_map_logs_and_clips_without_full_audio) ... ok
 test_diagnostic_timecodes_and_exact_first_channel_export (tests.test_diagnostics.DiagnosticTests.test_diagnostic_timecodes_and_exact_first_channel_export) ... /project/diagnose_points.py:53: ResourceWarning: unclosed file <_io.FileIO name=4 mode='rb' closefd=True>
   decoded = decode_first_channel_stream(info, path, Progress(), index*50., (index+1)*50.,
@@ -97,6 +100,6 @@ test_invalid_maps_and_overlapping_edits_are_rejected (tests.test_render.RenderTe
 test_out_of_range_is_silence (tests.test_render.RenderTests.test_out_of_range_is_silence) ... ok
 
 ----------------------------------------------------------------------
-Ran 73 tests in 141.746s
+Ran 76 tests in 142.438s
 
 OK

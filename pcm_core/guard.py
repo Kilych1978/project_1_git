@@ -49,10 +49,19 @@ def _signature(mapping, t, settings):
     # of all polynomial bytes for tens of thousands of cached PCM windows.
     digest = hashlib.sha256()
     if hasattr(mapping,'layers'):
-        import json
         center=float(mapping.forward([t])[0])
         local=mapping.local_layers([center-span,center+span])
-        digest.update(json.dumps(local,sort_keys=True).encode())
+        for layer in local:
+            x=np.asarray(layer['reference']);w=np.asarray(layer['weight'])
+            knots=np.r_[center-span,x[(x>center-span)&(x<center+span)],center+span]
+            weights=np.interp(knots,x,w,left=0.,right=0.)
+            if not np.any(weights>0):continue
+            # Distant masks and metadata do not change these PCM samples.
+            # Splitting an unrelated support island must retain cached checks.
+            digest.update(struct.pack('<dd',layer['rate'],layer['offset']))
+            digest.update(struct.pack('<Q',len(knots)))
+            digest.update(knots.astype('<f8').tobytes())
+            digest.update(weights.astype('<f8').tobytes())
         if hasattr(mapping.base,'layers'):
             digest.update(_signature(mapping.base,t,settings))
     for part in parts:

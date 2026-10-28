@@ -1,2 +1,2 @@
-Universal Audio Waveform Sync - Modular v6.9.8
+Universal Audio Waveform Sync - Modular v6.9.9
 Original v6.9.1 interface and coarse pipeline; verified PCM residual refinement

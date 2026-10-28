@@ -5,6 +5,7 @@ PASS: test_micro_search_recovers_known_shift
 ==============================================================================
 [  8.33%] Проверка микросовмещения | t=00:00:01
 [100.00%] Проверка микросовмещения | t=00:00:06
+Fontconfig error: No writable cache directories
 
 PASS: test_micro_refinement_keeps_true_local_shift
 PASS: test_micro_candidate_must_reduce_measured_error

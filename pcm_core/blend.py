@@ -113,6 +113,36 @@ class BlendMap:
         return {'representation':'pcm_overlap_add','base':self.base.to_dict(),
                 'sampling_layers':self.layers,'notes':self.notes}
 
+    def support_components(self):
+        """Separate positive-weight islands without changing a single weight.
+
+        Local cancellation can leave several safe islands in one clock patch.
+        They must remain independently eligible when another island fails.
+        """
+        parts=[]
+        for layer in self.layers:
+            x=np.asarray(layer['reference']);w=np.asarray(layer['weight'])
+            active=(w[:-1]>0)|(w[1:]>0)
+            edges=np.diff(np.r_[False,active,False].astype(np.int8))
+            for start,end in zip(np.flatnonzero(edges==1),np.flatnonzero(edges==-1)):
+                parts.append({**layer,'reference':x[start:end+1].tolist(),
+                              'weight':w[start:end+1].tolist()})
+        return parts
+
+    def discard_failed_components(self,failures,halo=.001):
+        """Drop only support islands touching a failed PCM comparison window."""
+        intervals=[]
+        for row in failures:
+            half=row.get('window_sec',row.get('verification_window_sec',.125))/2+halo
+            intervals.append((row['reference_time']-half,row['reference_time']+half))
+        kept=[];removed=[]
+        for layer in self.support_components():
+            lo,hi=layer['reference'][0],layer['reference'][-1]
+            if any(lo<b and hi>a for a,b in intervals):
+                removed.append({'start_sec':float(lo),'end_sec':float(hi)})
+            else:kept.append(layer)
+        return (BlendMap(self.base,kept) if kept else self.base),removed
+
 
 def affine_patches(measurements,base,sample_rate,coherent_gaps=False,
                    max_anchor_gap=.251,min_band_score=.95):
@@ -176,9 +206,12 @@ def gate_patches(reference,target,base,proposal,schedules,settings,reference_tim
     candidate=proposal
     history=[]
     source_cache,before_cache,fixed_cache,fixed_before={},{},{},{}
-    for attempt in range(6):
+    # The first six passes keep local waveform masks. If a few boundaries
+    # remain unsafe, remove their support islands and VERIFY the retained map.
+    # A rejected island must not discard unrelated improvements in the film.
+    for attempt in range(9):
         if same_map(base,candidate):break
-        if progress is not None and hasattr(progress,'begin_pass'):progress.begin_pass(attempt+1,6)
+        if progress is not None and hasattr(progress,'begin_pass'):progress.begin_pass(attempt+1,9)
         rows=[]
         total=sum(len(times) for _,times in schedules)+2*len(reference_times)
         done=0
@@ -197,9 +230,23 @@ def gate_patches(reference,target,base,proposal,schedules,settings,reference_tim
         improved={round(row['target_time'],9) for row in rows if row['status']=='VERIFIED'
                   and row['baseline_residual_sec'] is not None and row['residual_sec'] is not None
                   and abs(row['residual_sec'])+settings.min_improvement<abs(row['baseline_residual_sec'])}
-        history.append({'attempt':attempt,'bad':len(bad),'improved':len(improved)})
+        history.append({'attempt':attempt,'bad':len(bad),'improved':len(improved),
+                        'mode':'local_mask' if attempt<6 else 'isolated_components'})
         if not bad:
             return (candidate,rows,history) if len(improved)>=3 else (base,[],history)
+        if attempt>=5:
+            history[-1]['failed_windows']=[{
+                'target_time':r.get('target_time'),'reference_time':r['reference_time'],
+                'status':r['status'],'window_sec':r.get('window_sec',r.get('verification_window_sec',.125)),
+                'before_residual_sec':r.get('baseline_residual_sec'),'after_residual_sec':r.get('residual_sec'),
+                'before_score':r.get('baseline_score'),'after_score':r.get('score')} for r in bad]
+            if attempt==8 or not isinstance(candidate,BlendMap):break
+            candidate,removed=candidate.discard_failed_components(bad)
+            history[-1]['discarded_components']=removed
+            if not removed:break
+            if progress is not None:
+                print(f'\nИзолировано проблемных фрагментов: {len(removed)}. Остальные поправки проверяются повторно.')
+            continue
         # Copy the baseline over every failed analysis window, with a short
         # amplitude crossfade outside it. This never creates a speed ramp.
         groups={}
