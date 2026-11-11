@@ -14,20 +14,24 @@ test_native_file_keeps_old_good_scene_and_adds_new_improvement (tests.test_best_
 test_pcm_patches_preserve_bad_scene_and_render_identical_weights_on_all_channels (tests.test_best_plan.BestPlanTests.test_pcm_patches_preserve_bad_scene_and_render_identical_weights_on_all_channels) ... ok
 test_pcm_result_does_not_collide_with_accepted_coarse_wav (tests.test_best_plan.BestPlanTests.test_pcm_result_does_not_collide_with_accepted_coarse_wav) ... ok
 test_wide_window_smear_still_reaches_short_waveform_patch_search (tests.test_best_plan.BestPlanTests.test_wide_window_smear_still_reaches_short_waveform_patch_search) ... ok
+test_complete_window_restores_inner_clock_and_all_layers (tests.test_complete_recovery.CompleteRecoveryTests.test_complete_window_restores_inner_clock_and_all_layers) ... ok
+test_diagnostic_bundle_contains_failed_window_and_rejected_candidate (tests.test_complete_recovery.CompleteRecoveryTests.test_diagnostic_bundle_contains_failed_window_and_rejected_candidate) ... ok
+test_empty_pcm_stack_cannot_change_reference_window_change_detection (tests.test_complete_recovery.CompleteRecoveryTests.test_empty_pcm_stack_cannot_change_reference_window_change_detection) ... ok
+test_full_refiner_repairs_before_multichannel_write_and_passes_actual_wav (tests.test_complete_recovery.CompleteRecoveryTests.test_full_refiner_repairs_before_multichannel_write_and_passes_actual_wav) ... ok
 test_bad_window_removes_every_island_it_intersects (tests.test_component_retention.ComponentRetentionTests.test_bad_window_removes_every_island_it_intersects) ... ok
 test_exhausted_gate_retains_and_rechecks_distant_good_pcm_in_native_wav (tests.test_component_retention.ComponentRetentionTests.test_exhausted_gate_retains_and_rechecks_distant_good_pcm_in_native_wav) ... ok
 test_support_islands_are_sample_identical_and_keep_local_cache (tests.test_component_retention.ComponentRetentionTests.test_support_islands_are_sample_identical_and_keep_local_cache) ... ok
 test_complete_bundle_contains_final_map_logs_and_clips_without_full_audio (tests.test_diagnostics.DiagnosticTests.test_complete_bundle_contains_final_map_logs_and_clips_without_full_audio) ... ok
-test_diagnostic_timecodes_and_exact_first_channel_export (tests.test_diagnostics.DiagnosticTests.test_diagnostic_timecodes_and_exact_first_channel_export) ... /project/diagnose_points.py:53: ResourceWarning: unclosed file <_io.FileIO name=4 mode='rb' closefd=True>
+test_diagnostic_timecodes_and_exact_first_channel_export (tests.test_diagnostics.DiagnosticTests.test_diagnostic_timecodes_and_exact_first_channel_export) ... /workspace/project_1_git/diagnose_points.py:53: ResourceWarning: unclosed file <_io.FileIO name=4 mode='rb' closefd=True>
   decoded = decode_first_channel_stream(info, path, Progress(), index*50., (index+1)*50.,
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-/project/diagnose_points.py:53: ResourceWarning: unclosed file <_io.FileIO name=6 mode='rb' closefd=True>
+/workspace/project_1_git/diagnose_points.py:53: ResourceWarning: unclosed file <_io.FileIO name=6 mode='rb' closefd=True>
   decoded = decode_first_channel_stream(info, path, Progress(), index*50., (index+1)*50.,
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-/project/diagnose_points.py:53: ResourceWarning: unclosed file <_io.FileIO name=4 mode='rb' closefd=True>
+/workspace/project_1_git/diagnose_points.py:53: ResourceWarning: unclosed file <_io.FileIO name=4 mode='rb' closefd=True>
   decoded = decode_first_channel_stream(info, path, Progress(), index*50., (index+1)*50.,
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-/project/diagnose_points.py:53: ResourceWarning: unclosed file <_io.FileIO name=7 mode='rb' closefd=True>
+/workspace/project_1_git/diagnose_points.py:53: ResourceWarning: unclosed file <_io.FileIO name=7 mode='rb' closefd=True>
   decoded = decode_first_channel_stream(info, path, Progress(), index*50., (index+1)*50.,
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
@@ -45,16 +49,16 @@ test_failed_actual_render_is_discarded_without_losing_baseline (tests.test_modul
 test_failing_finer_grid_preserves_previously_verified_candidate (tests.test_modular_fix.ModularFixTests.test_failing_finer_grid_preserves_previously_verified_candidate) ... ok
 test_identity_and_unrelated_audio_keep_baseline (tests.test_modular_fix.ModularFixTests.test_identity_and_unrelated_audio_keep_baseline) ... ok
 test_main_pcm_fallback_cannot_hide_a_known_dense_grid_regression (tests.test_modular_fix.ModularFixTests.test_main_pcm_fallback_cannot_hide_a_known_dense_grid_regression) ... ok
-test_micro_only_original_menus_create_verified_multichannel_output (tests.test_modular_fix.ModularFixTests.test_micro_only_original_menus_create_verified_multichannel_output) ... /project/analyzer.py:1124: ResourceWarning: unclosed file <_io.FileIO name=4 mode='rb' closefd=True>
+test_micro_only_original_menus_create_verified_multichannel_output (tests.test_modular_fix.ModularFixTests.test_micro_only_original_menus_create_verified_multichannel_output) ... /workspace/project_1_git/analyzer.py:1124: ResourceWarning: unclosed file <_io.FileIO name=4 mode='rb' closefd=True>
   decode_first_channel_stream(
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-/project/analyzer.py:1124: ResourceWarning: unclosed file <_io.FileIO name=6 mode='rb' closefd=True>
+/workspace/project_1_git/analyzer.py:1124: ResourceWarning: unclosed file <_io.FileIO name=6 mode='rb' closefd=True>
   decode_first_channel_stream(
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-/project/analyzer.py:1149: ResourceWarning: unclosed file <_io.FileIO name=4 mode='rb' closefd=True>
+/workspace/project_1_git/analyzer.py:1149: ResourceWarning: unclosed file <_io.FileIO name=4 mode='rb' closefd=True>
   decode_first_channel_stream(
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-/project/analyzer.py:1149: ResourceWarning: unclosed file <_io.FileIO name=6 mode='rb' closefd=True>
+/workspace/project_1_git/analyzer.py:1149: ResourceWarning: unclosed file <_io.FileIO name=6 mode='rb' closefd=True>
   decode_first_channel_stream(
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
@@ -100,6 +104,6 @@ test_invalid_maps_and_overlapping_edits_are_rejected (tests.test_render.RenderTe
 test_out_of_range_is_silence (tests.test_render.RenderTests.test_out_of_range_is_silence) ... ok
 
 ----------------------------------------------------------------------
-Ran 76 tests in 142.438s
+Ran 80 tests in 156.562s
 
 OK

@@ -152,7 +152,7 @@ def _plot_pcm_overlays(reference, baseline, final, rows, output_dir, sample_rate
 
 
 def export_diagnostic_clips(reference, baseline, output_dir, sample_rate=48000, times=None, final=None,
-                            include_uniform=True):
+                            include_uniform=True, failure_times=(), candidate=None):
     """Small mono PCM excerpts, same absolute timeline; never upload them."""
     duration = min(len(reference), len(baseline)) / sample_rate
     if duration < 5:
@@ -163,6 +163,7 @@ def export_diagnostic_clips(reference, baseline, output_dir, sample_rate=48000, 
     if duration < clip_length * 3 and include_uniform:
         centers = [duration / 2]
     centers += list(times or [])[:4 if include_uniform else 8]
+    centers += list(failure_times)[:12]
     centers = sorted(set(round(float(t), 3) for t in centers if margin <= t <= duration - margin))
     clip_dir = output_dir / '_diagnostic_clips'
     clip_dir.mkdir(exist_ok=True)
@@ -176,6 +177,8 @@ def export_diagnostic_clips(reference, baseline, output_dir, sample_rate=48000, 
         streams = [('reference', reference), ('coarse_target', baseline)]
         if final is not None:
             streams.append(('final_target', final))
+        if candidate is not None and candidate is not final:
+            streams.append(('candidate_target', candidate))
         for name, pcm in streams:
             path = clip_dir / f'{index:02d}_{name}.wav'
             with wave.open(str(path), 'wb') as file:
@@ -497,6 +500,24 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
         else:
             fine, holdouts, measurements, settings, audit, verification_schedules = plan_refinement(
                 reference, baseline, base, settings, report, progress)
+        if protect_best:
+            from pcm_core.preflight import settle
+            # Incremental layer gates compare different intermediate plans.
+            # Establish a safe baseline, then verify the COMPLETE stack
+            # against both that baseline and the untouched source before
+            # decoding and writing every channel of a feature-length film.
+            rollback_base = protection.baseline if protection is not None else base
+            rollback_base, _, baseline_history = settle(reference,baseline,base,rollback_base,base,
+                verification_schedules,settings,progress=progress)
+            report['baseline_end_to_end_audit'] = baseline_history
+            fine, _, final_history = settle(reference,baseline,base,fine,rollback_base,
+                verification_schedules,settings,
+                reference_times=protection.reference_times if protection is not None else (),
+                progress=progress,protected=protection is not None)
+            report['complete_plan_audit'] = final_history
+            if protection is not None:
+                protection.baseline = rollback_base
+                report['baseline_fine_map'] = rollback_base.to_dict()
         if same_map(base, fine):
             report['reason'] = 'Надёжное улучшение не подтверждено; основной результат сохранён.'
         else:
@@ -563,15 +584,12 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
                 if not bad:
                     break
                 rollback_base = protection.baseline if protection is not None else base
-                half_window=max(r.get('window_sec',r.get('verification_window_sec',.125))/2+.001 for r in bad)
-                if hasattr(fine,'reduced'):
-                    # Absolute-reference probes and source probes use different
-                    # source centers. Their actual output windows share this clock.
-                    reduced,removed=fine.reduced([r['reference_time'] for r in bad],half_window,
-                                                 protected_base=rollback_base)
-                else:
-                    reduced, removed = cancel_unsafe_components(rollback_base, fine, [r['target_time'] for r in bad],
-                        settings.max_rate_change,protected_half_window=half_window)
+                from pcm_core.recovery import restore_failures
+                # Restore every inner curve and PCM layer, not only the
+                # additional overlap layers. Per-window widths stay separate.
+                reduced=restore_failures(fine,rollback_base,bad,padding=.0625*attempt)
+                removed=[{'reference_time':r['reference_time'],
+                          'window_sec':r.get('window_sec',r.get('verification_window_sec',.125))} for r in bad]
                 if not removed or same_map(base, reduced):
                     break
                 audit.append({'status': 'ACTUAL_LOCAL_CANCEL', 'attempt': attempt + 1,
@@ -582,6 +600,12 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
                 candidate_path.unlink()
                 candidate_path = None
                 fine = reduced.validate(settings.max_rate_change)
+                if protect_best:
+                    fine,_,history=settle(reference,baseline,base,fine,rollback_base,
+                        verification_schedules,settings,
+                        reference_times=protection.reference_times if protection is not None else (),
+                        progress=progress,protected=protection is not None)
+                    report.setdefault('native_recovery_audit',[]).append(history)
             report['fine_map'] = fine.to_dict()
             if report['candidate_verdict'] == 'VERIFIED_PCM':
                 destination = output_dir / (selected.target.path.stem + '_SYNCED.wav')
@@ -653,8 +677,19 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
                     if len(diagnostic_times) == 4:
                         break
                 diagnostic_times = (diagnostic_times+ambiguous)[:4]
+                # Failed windows explain a rejected output. Previously only
+                # large measurable residuals were exported, omitting the
+                # actual rejection (often an ambiguous splice elsewhere).
+                from pcm_core.preflight import failed
+                failures=failed(actual_rows)+failed(report.get('protected_output_windows',[]))
+                failure_times=[]
+                for row in failures:
+                    t=row['reference_time']
+                    if all(abs(t-old)>=8. for old in failure_times):failure_times.append(t)
+                    if len(failure_times)==12:break
                 final_pcm = actual if report['status'] == 'PCM_REFINED' else baseline
-                clips = export_diagnostic_clips(reference, baseline, output_dir, settings.analysis_rate, diagnostic_times, final=final_pcm)
+                clips = export_diagnostic_clips(reference, baseline, output_dir, settings.analysis_rate,
+                    diagnostic_times, final=final_pcm, failure_times=failure_times, candidate=actual)
                 report['diagnostic_clips'] = str(clips) if clips else None
                 if make_plots and report['status'] == 'PCM_REFINED':
                     _plot_pcm_overlays(reference, baseline, actual, actual_rows, output_dir, settings.analysis_rate)
@@ -665,6 +700,21 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
                 pcm._mmap.close()
         (fine_dir / 'candidate_first.f32').unlink(missing_ok=True)
     _write_csv(output_dir / 'PCM_MICRO_POINTS.csv', report['measurements'])
+    if report['status'] != 'PCM_REFINED':
+        # The rejected candidate is diagnostic evidence, not the final audio.
+        # Keep its failed measurements under an explicit name; final metrics
+        # now describe the retained baseline instead of a deleted WAV.
+        report['rejected_candidate_windows']=actual_rows
+        actual_rows=[{**row, 'reference_time':float(base.forward([row['target_time']])[0]),
+                      'micro_changed':False, 'change_extent_sec':0.,
+                      'residual_sec':row['baseline_residual_sec'],
+                      'score':row.get('baseline_score'),
+                      'status':'VERIFIED' if row['baseline_residual_sec'] is not None else 'UNVERIFIABLE'}
+                     for row in actual_rows]
+        report['actual_output_windows']=actual_rows
+        report['additional_improvement_confirmed']=False
+        if 'protected_output_windows' in report:
+            report['protected_candidate_windows']=report.pop('protected_output_windows')
     # The proposal's holdouts may have been locally cancelled. Plot/export
     # decisions for the WAV actually retained, not for an earlier proposal.
     report['proposal_independent_windows']=report.get('independent_windows',[])
@@ -681,7 +731,7 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
                          'before_residual_sec':before,'after_residual_sec':after,'status':status,
                          'probe_kind':'final_pcm'})
     report['independent_windows']=holdouts
-    report['nominal_map_has_pcm_layers']=hasattr(locals().get('fine'),'layers') and report['status']=='PCM_REFINED'
+    report['nominal_map_has_pcm_layers']=hasattr(locals().get('fine'),'sample') and report['status']=='PCM_REFINED'
     _write_csv(output_dir / 'PCM_MICRO_HOLDOUT.csv', holdouts)
     _write_csv(output_dir / 'PCM_MICRO_ACTUAL.csv', actual_rows)
     if make_plots:

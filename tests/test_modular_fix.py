@@ -93,7 +93,13 @@ class ModularFixTests(unittest.TestCase):
             self.assertGreaterEqual(len(calls), 2)
             self.assertTrue(any(r['status'] == 'ACTUAL_LOCAL_CANCEL' for r in report['audit']))
             self.assertAlmostEqual(np.interp(3., final['target_time'], final['offset']), -.006, delta=1/SR)
-            self.assertAlmostEqual(np.interp(10., final['target_time'], final['offset']), 0., delta=1e-10)
+            # Full-window PCM restoration preserves its nominal candidate
+            # clock. A single time-map node no longer describes a crossfade;
+            # verify the actual restored audio, rather than that nominal node.
+            from .helpers import read_audio
+            _,written=read_audio(result['output_path'])
+            np.testing.assert_array_equal(written[round(9.99*SR):round(10.01*SR),0],
+                                          y[round(9.99*SR):round(10.01*SR)])
             self.assertEqual(probe_audio_file(result['output_path']).codec_name, 'pcm_f32le')
 
     def test_one_invalid_local_transition_keeps_other_movie_corrections(self):

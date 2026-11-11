@@ -196,6 +196,10 @@ class TimeMap:
 
     @classmethod
     def from_dict(cls, value):
+        if value.get('representation') == 'pcm_window_restore':
+            from .recovery import RestoredMap
+            return RestoredMap(cls.from_dict(value['candidate']),cls.from_dict(value['fallback']),
+                               value['intervals'],value['fade_sec'])
         if value.get('representation')=='pcm_overlap_add':
             from .blend import BlendMap
             return BlendMap(cls.from_dict(value['base']),value['sampling_layers'])

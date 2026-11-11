@@ -1,9 +1,23 @@
+test_complete_window_restores_inner_clock_and_all_layers (tests.test_complete_recovery.CompleteRecoveryTests.test_complete_window_restores_inner_clock_and_all_layers) ... ok
+test_diagnostic_bundle_contains_failed_window_and_rejected_candidate (tests.test_complete_recovery.CompleteRecoveryTests.test_diagnostic_bundle_contains_failed_window_and_rejected_candidate) ... ok
+test_empty_pcm_stack_cannot_change_reference_window_change_detection (tests.test_complete_recovery.CompleteRecoveryTests.test_empty_pcm_stack_cannot_change_reference_window_change_detection) ... ok
+test_full_refiner_repairs_before_multichannel_write_and_passes_actual_wav (tests.test_complete_recovery.CompleteRecoveryTests.test_full_refiner_repairs_before_multichannel_write_and_passes_actual_wav) ... ok
 test_bad_window_removes_every_island_it_intersects (tests.test_component_retention.ComponentRetentionTests.test_bad_window_removes_every_island_it_intersects) ... ok
 test_exhausted_gate_retains_and_rechecks_distant_good_pcm_in_native_wav (tests.test_component_retention.ComponentRetentionTests.test_exhausted_gate_retains_and_rechecks_distant_good_pcm_in_native_wav) ... ok
 test_support_islands_are_sample_identical_and_keep_local_cache (tests.test_component_retention.ComponentRetentionTests.test_support_islands_are_sample_identical_and_keep_local_cache) ... ok
-test_nested_patch_changes_remain_visible_to_validation_and_cache (tests.test_oct22_regressions.Oct22RegressionTests.test_nested_patch_changes_remain_visible_to_validation_and_cache) ... ok
+test_exact_replacement_and_rollback_preserve_the_established_curve (tests.test_best_plan.BestPlanTests.test_exact_replacement_and_rollback_preserve_the_established_curve) ... ok
+test_fresh_common_delay_proposal_without_old_folders (tests.test_best_plan.BestPlanTests.test_fresh_common_delay_proposal_without_old_folders) ... ok
+test_native_file_keeps_old_good_scene_and_adds_new_improvement (tests.test_best_plan.BestPlanTests.test_native_file_keeps_old_good_scene_and_adds_new_improvement) ... ok
+test_pcm_patches_preserve_bad_scene_and_render_identical_weights_on_all_channels (tests.test_best_plan.BestPlanTests.test_pcm_patches_preserve_bad_scene_and_render_identical_weights_on_all_channels) ... ok
+test_pcm_result_does_not_collide_with_accepted_coarse_wav (tests.test_best_plan.BestPlanTests.test_pcm_result_does_not_collide_with_accepted_coarse_wav) ... ok
+test_wide_window_smear_still_reaches_short_waveform_patch_search (tests.test_best_plan.BestPlanTests.test_wide_window_smear_still_reaches_short_waveform_patch_search) ... ok
 
 ----------------------------------------------------------------------
-Ran 4 tests in 0.682s
+Ran 13 tests in 27.835s
 
 OK
+
+Native user-clip check, full-film clocks:
+BASELINE_GATE [{"attempt": 1, "failed": 0, "improved": 359}]
+FINAL_GATE [{"attempt": 1, "failed": 0, "improved": 1473}]
+RESULT {"scope": "Ten supplied 8-second intervals, full-film clocks; unknown intervals not tested", "checks": 5198, "bad": [], "improved": 3004, "median_improved_ms": 0.0029090762007086823}

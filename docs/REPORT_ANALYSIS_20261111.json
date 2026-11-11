@@ -1,0 +1,34 @@
+{
+  "scope": "Ten supplied 8-second intervals, full-film clocks; unknown intervals not tested",
+  "checks": 5198,
+  "bad": [],
+  "improved": 3004,
+  "median_improved_ms": 0.0029090762007086823,
+  "version": "6.9.10",
+  "full_movie_new_output_tested": false,
+  "baseline_checks": 0,
+  "new_source_originals_verified": 130,
+  "new_report_volumes_crc_verified": 6,
+  "report_native_failed_checks_by_attempt": [
+    127,
+    33,
+    18
+  ],
+  "report_target_window_residual_ms": [
+    -0.00045683262711785727,
+    -0.007426169057026754,
+    0.004213218621998749
+  ],
+  "full_modular_smoke_passed": true,
+  "synthetic_duration_sec": 240,
+  "synthetic_native_verified_windows": 483,
+  "synthetic_output_codec": "pcm_s16le",
+  "synthetic_output_channels": 6,
+  "synthetic_source_hashes_unchanged": true,
+  "nested_extent_fixed_probe": {
+    "reference_time_sec": 1248.0416666666667,
+    "previous_nested_extent_sec": 5.973996780994639e-05,
+    "new_plain_extent_sec": 1.991362773878791e-05,
+    "new_nested_extent_sec": 1.991362773878791e-05
+  }
+}

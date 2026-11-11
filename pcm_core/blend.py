@@ -12,7 +12,7 @@ from .dsp import sinc_sample
 
 
 def sample_map(source,mapping,times,sample_rate,radius):
-    if isinstance(mapping,BlendMap):
+    if hasattr(mapping,'sample'):
         return mapping.sample(source,times,sample_rate,radius)
     positions,rate=mapping.inverse_with_rate(times)
     cutoff=np.minimum(1.,1/np.maximum(np.nan_to_num(rate,nan=1.),1.))
@@ -72,13 +72,17 @@ class BlendMap:
         return self
 
     def extent(self,other,ref_times):
+        if self is other:return 0.
         # Conservative: cancellation of nominal delays cannot hide a blend.
         a=self.base.inverse(ref_times);b=other.inverse(ref_times)
         extent=np.nan_to_num(np.abs(a-b),nan=0.)
-        if isinstance(self.base,BlendMap) and self.base is not other:
+        if hasattr(self.base,'extent') and self.base is not other:
             # A later refinement must not hide PCM changes in its preserved
             # inner layer merely because the nominal clock is unchanged.
-            extent+=self.base.extent(other,ref_times)
+            # The inner plan already includes its nominal-clock difference.
+            # Adding that difference again for each wrapper can turn a
+            # sub-sample unchanged edge into a false multi-sample change.
+            extent=np.full_like(extent,self.base.extent(other,ref_times))
         for layer in self.local_layers(ref_times):
             aligned=(np.asarray(ref_times)-layer['offset'])/layer['rate']
             extent+=self.weight(layer,ref_times)*np.nan_to_num(np.abs(aligned-a),nan=0.)

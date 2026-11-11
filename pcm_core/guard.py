@@ -6,7 +6,7 @@ from .micro import grid, measure_window, refined_map
 
 
 def same_map(a, b, tolerance=1e-10):
-    if hasattr(a,'layers') or hasattr(b,'layers'):
+    if hasattr(a,'sample') or hasattr(b,'sample'):
         return a.to_dict()==b.to_dict()
     if len(a.pieces) != len(b.pieces):
         return False
@@ -34,6 +34,17 @@ def _signature(mapping, t, settings):
     """Exact local polynomial signature for reusing unchanged PCM probes."""
     span = (min(.45, settings.anchor_step / 6) + settings.micro_window / 2
             + settings.micro_radius * 2 + .05) / (1 - settings.max_rate_change)
+    if hasattr(mapping, 'fallback'):
+        center=float(mapping.forward([t])[0])
+        intervals=mapping.local_intervals(center-span,center+span)
+        if not intervals:return _signature(mapping.candidate,t,settings)
+        digest=hashlib.sha256(b'pcm_window_restore')
+        digest.update(_signature(mapping.candidate,t,settings))
+        fallback_time=float(mapping.fallback.inverse([center])[0])
+        digest.update(_signature(mapping.fallback,fallback_time,settings))
+        digest.update(struct.pack('<d',mapping.fade))
+        digest.update(np.asarray(intervals,dtype='<f8').tobytes())
+        return digest.digest()
     parts = []
     for p in mapping.pieces:
         if t + span < p.target[0] or t - span > p.target[-1]:
@@ -62,7 +73,7 @@ def _signature(mapping, t, settings):
             digest.update(struct.pack('<Q',len(knots)))
             digest.update(knots.astype('<f8').tobytes())
             digest.update(weights.astype('<f8').tobytes())
-        if hasattr(mapping.base,'layers'):
+        if hasattr(mapping.base,'sample'):
             digest.update(_signature(mapping.base,t,settings))
     for part in parts:
         digest.update(struct.pack('<Q', len(part)))
@@ -75,12 +86,13 @@ def _change_extent(base, candidate, t, settings, edge=False):
     length = min(settings.micro_window, settings.anchor_step / 8)
     span = length / 2 + (0. if edge else min(.45, settings.anchor_step / 6))
     span += settings.sinc_radius / settings.analysis_rate
-    probes = np.linspace(t - span, t + span, 9)
-    if hasattr(candidate,'extent'):
-        return candidate.extent(base,candidate.base.forward(probes))
-    a, b = base.forward(probes), candidate.forward(probes)
-    valid = np.isfinite(a) & np.isfinite(b)
-    return float(np.max(np.abs(a[valid] - b[valid]))) if valid.any() else 0.
+    # PCM windows live on the output/reference clock. Forward-map probes on
+    # the source clock can miss a changed edge or mark the same nested plan
+    # differently from its bare TimeMap.
+    center=float(candidate.forward([t])[0])
+    probes = np.linspace(center - span, center + span, 9)
+    from .recovery import extent
+    return extent(candidate,base,probes)
 
 
 def gate_micro(reference, target, base, measurements, settings, log=print, progress=None, probe_times=None, strong_fast=False,
