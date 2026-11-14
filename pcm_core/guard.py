@@ -3,6 +3,7 @@ import hashlib
 import struct
 import numpy as np
 from .micro import grid, measure_window, refined_map
+from .progress import window, slice_progress
 
 
 def same_map(a, b, tolerance=1e-10):
@@ -122,7 +123,7 @@ def gate_micro(reference, target, base, measurements, settings, log=print, progr
         if progress is not None and hasattr(progress, 'begin_pass'):
             progress.begin_pass(attempt, 11)
         pcm = verify_candidate_pcm(reference, target, base, candidate, settings,
-                                   progress=(lambda done, total: progress(done, total_checks)) if progress else None,
+                                   progress=slice_progress(progress,0,total_checks),
                                    target_times=times,
                                    row_cache=pcm_cache, baseline_cache=before_cache)
         rows = []
@@ -155,7 +156,7 @@ def gate_micro(reference, target, base, measurements, settings, log=print, progr
         for schedule, prior_times in prior_schedules:
             previous = verify_candidate_pcm(reference, target, base, candidate, schedule,
                 target_times=prior_times, row_cache=pcm_cache, baseline_cache=before_cache,
-                progress=(lambda done, total, offset=completed: progress(offset+done, total_checks)) if progress else None)
+                progress=slice_progress(progress,completed,total_checks))
             completed += len(prior_times)
             for r in previous:
                 if r['micro_changed'] and r['status'] in {'REGRESSION', 'UNVERIFIABLE'}:
@@ -238,21 +239,30 @@ def verify_render(reference, original_target, rendered, base, final, settings, p
     for index, t in enumerate(target_times):
         cache_key = (settings, t, _signature(final, t, settings)) if virtual else None
         if virtual and cache_key in row_cache:
-            rows.append(row_cache[cache_key])
+            row=row_cache[cache_key]
+            rows.append(row)
+            window(progress,row['reference_time'],row['verification_window_sec'],cached=True)
             if progress:
                 progress(index + 1, len(target_times))
             continue
         center = float(final.forward([t])[0])
         if not np.isfinite(center):
             continue
-        key = (settings, t)
+        window(progress,center,min(settings.micro_window,settings.anchor_step/8))
+        # Both PCM plans must be sampled at the SAME reference window. A
+        # restored plan keeps its candidate nominal clock, which may differ
+        # from base.forward(t); comparing those two centers falsely rejects
+        # byte-identical restored audio. Cache the reference center as well.
+        key = (settings, center)
         if key not in baseline_cache:
             baseline_cache[key] = measure_window(reference, original_target, base, t, settings,
-                                                 quantize_pcm16=settings.verification_pcm16)
+                                                 quantize_pcm16=settings.verification_pcm16,
+                                                 reference_time=center)
         baseline_center = baseline_cache[key]
         expected = measure_window(reference, original_target, final, t, settings,
-                                  quantize_pcm16=settings.verification_pcm16)
-        actual = expected if virtual else measure_window(reference, rendered, output_map, center, settings)
+                                  quantize_pcm16=settings.verification_pcm16, reference_time=center)
+        actual = expected if virtual else measure_window(reference, rendered, output_map, center, settings,
+                                                         reference_time=center)
         def valid(m):
             return bool(m and not m["near_edge"] and m["score"] >= settings.min_raw_score
                         and m["margin"] >= settings.min_raw_margin)
@@ -262,10 +272,11 @@ def verify_render(reference, original_target, rendered, base, final, settings, p
             from dataclasses import replace
             wide = replace(settings, anchor_step=.5)
             wide_before = measure_window(reference, original_target, base, t, wide,
-                                         quantize_pcm16=settings.verification_pcm16)
+                                         quantize_pcm16=settings.verification_pcm16, reference_time=center)
             wide_expected = measure_window(reference, original_target, final, t, wide,
-                                           quantize_pcm16=settings.verification_pcm16)
-            wide_actual = wide_expected if virtual else measure_window(reference, rendered, output_map, center, wide)
+                                           quantize_pcm16=settings.verification_pcm16, reference_time=center)
+            wide_actual = wide_expected if virtual else measure_window(reference, rendered, output_map, center, wide,
+                                                                        reference_time=center)
             if valid(wide_actual) and valid(wide_before) and valid(wide_expected):
                 actual, baseline_center, expected = wide_actual, wide_before, wide_expected
                 context = wide
@@ -303,6 +314,7 @@ def verify_render(reference, original_target, rendered, base, final, settings, p
             # including a lag outside the ±25 ms search radius or corrupted PCM.
             row["status"] = "REGRESSION"
         rows.append(row)
+        window(progress,center,verification_length)
         if virtual:
             row_cache[cache_key] = row
         if progress:

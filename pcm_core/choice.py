@@ -10,6 +10,7 @@ import numpy as np
 from .micro import measure_window
 from .model import Piece,TimeMap
 from .guard import verify_candidate_pcm,holdout_times,grid,cancel_unsafe_components,same_map,_signature
+from .progress import window, slice_progress
 
 
 def replace_map(base,proposal):
@@ -46,25 +47,26 @@ def verify_reference_grid(reference,target,base,proposal,settings,times,rendered
         cache_key = (settings,float(t),_signature(proposal,new_time,settings)) if rendered is None and np.isfinite(new_time) else None
         if cache_key is not None and cache_key in row_cache:
             rows.append(row_cache[cache_key])
+            window(progress,t,length,cached=True)
             if progress:
                 progress(index,len(times))
             continue
         key = (settings,float(t))
         if key not in baseline_cache:
             baseline_cache[key] = measure_window(reference,target,base,old_time,settings,
-                                                  quantize_pcm16=settings.verification_pcm16)
+                                                  quantize_pcm16=settings.verification_pcm16,reference_time=t)
         before = baseline_cache[key]
         expected = (measure_window(reference,target,proposal,new_time,settings,
-                                  quantize_pcm16=settings.verification_pcm16)
+                                  quantize_pcm16=settings.verification_pcm16,reference_time=t)
                     if np.isfinite(new_time) else None)
-        after = expected if rendered is None else measure_window(reference,rendered,identity,t,settings)
+        after = expected if rendered is None else measure_window(reference,rendered,identity,t,settings,reference_time=t)
         probes = np.linspace(t-half,t+half,9)
         old_positions,new_positions = base.inverse(probes),proposal.inverse(probes)
         finite = np.isfinite(old_positions)&np.isfinite(new_positions)
         changed = (not np.array_equal(np.isfinite(old_positions),np.isfinite(new_positions)) or
                    (finite.any() and np.max(np.abs(old_positions[finite]-new_positions[finite]))>=settings.min_improvement))
-        if hasattr(proposal,'extent'):
-            changed=proposal.extent(base,probes)>=settings.min_improvement
+        from .recovery import extent
+        changed=extent(proposal,base,probes)>=settings.min_improvement
         status = 'VERIFIED' if valid(after) else 'UNVERIFIABLE'
         if changed and (not valid(before) or not valid(after) or not valid(expected)):
             status = 'REGRESSION'
@@ -77,6 +79,7 @@ def verify_reference_grid(reference,target,base,proposal,settings,times,rendered
                      'residual_sec':after['correction_sec'] if valid(after) else None,
                      'status':status,'probe_kind':'absolute_reference','window_sec':length}
         rows.append(row)
+        window(progress,t,length)
         if cache_key is not None:
             row_cache[cache_key] = row
         if progress:
@@ -133,12 +136,12 @@ def choose_local(reference,target,base,proposal,schedules,settings,reference_tim
         for schedule,centers in schedules:
             rows.extend(verify_candidate_pcm(reference,target,base,candidate,schedule,target_times=centers,
                 row_cache=row_cache,baseline_cache=before_cache,
-                progress=(lambda done,total,offset=completed:progress(offset+done,total_checks)) if progress else None))
+                progress=slice_progress(progress,completed,total_checks)))
             completed += len(centers)
         for step in (.125,.5):
             rows.extend(verify_reference_grid(reference,target,base,candidate,
                 replace(settings,anchor_step=step),reference_times,row_cache=fixed_cache,baseline_cache=fixed_before,
-                progress=(lambda done,total,offset=completed:progress(offset+done,total_checks)) if progress else None))
+                progress=slice_progress(progress,completed,total_checks)))
             completed += len(reference_times)
         bad = [r for r in rows if r['status']=='REGRESSION' or
                (r['micro_changed'] and r['status']=='UNVERIFIABLE')]

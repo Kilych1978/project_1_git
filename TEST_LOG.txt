@@ -92,6 +92,13 @@ test_s16_six_channel_render_keeps_precision_size_and_riff_timing (tests.test_pcm
 test_zoom_cancels_base_curvature_between_anchors_and_survives_serialization (tests.test_pcm_recovery.PCMRecoveryTests.test_zoom_cancels_base_curvature_between_anchors_and_survives_serialization) ... ok
 test_zoom_rollback_preserves_verified_base_curve (tests.test_pcm_recovery.PCMRecoveryTests.test_zoom_rollback_preserves_verified_base_curve) ... ok
 test_exact_first_channel_sample_positions_and_overlapping_excerpts (tests.test_point_collector.PointCollectorTests.test_exact_first_channel_sample_positions_and_overlapping_excerpts) ... ok
+test_offset_counter_preserves_absolute_reference_window_and_cache_flag (tests.test_progress_windows.ProgressWindowTests.test_offset_counter_preserves_absolute_reference_window_and_cache_flag) ... ok
+test_terminal_shows_milliseconds_arrow_and_keeps_single_line_within_width (tests.test_progress_windows.ProgressWindowTests.test_terminal_shows_milliseconds_arrow_and_keeps_single_line_within_width) ... ok
+test_baseline_cache_tracks_changed_reference_center (tests.test_reference_clock.ReferenceClockTests.test_baseline_cache_tracks_changed_reference_center) ... ok
+test_complete_gate_preserves_distant_gain_with_restored_nominal_clock_in_native_six_channels (tests.test_reference_clock.ReferenceClockTests.test_complete_gate_preserves_distant_gain_with_restored_nominal_clock_in_native_six_channels) ... ok
+test_corrupted_native_pcm_is_rejected_even_when_nominal_change_is_zero (tests.test_reference_clock.ReferenceClockTests.test_corrupted_native_pcm_is_rejected_even_when_nominal_change_is_zero) ... ok
+test_protected_restored_pcm_change_is_detected_despite_equal_nominal_clock (tests.test_reference_clock.ReferenceClockTests.test_protected_restored_pcm_change_is_detected_despite_equal_nominal_clock) ... ok
+test_restored_pcm_with_different_nominal_clock_is_not_false_regression (tests.test_reference_clock.ReferenceClockTests.test_restored_pcm_with_different_nominal_clock_is_not_false_regression) ... ok
 test_44100_hz_is_preserved_and_float_peaks_are_not_clipped (tests.test_render.RenderTests.test_44100_hz_is_preserved_and_float_peaks_are_not_clipped) ... ok
 test_6_channels_share_one_map_and_native_rate_is_preserved (tests.test_render.RenderTests.test_6_channels_share_one_map_and_native_rate_is_preserved) ... ok
 test_antialias_filter_at_compression (tests.test_render.RenderTests.test_antialias_filter_at_compression) ... ok
@@ -104,6 +111,6 @@ test_invalid_maps_and_overlapping_edits_are_rejected (tests.test_render.RenderTe
 test_out_of_range_is_silence (tests.test_render.RenderTests.test_out_of_range_is_silence) ... ok
 
 ----------------------------------------------------------------------
-Ran 80 tests in 156.562s
+Ran 87 tests in 154.193s
 
 OK

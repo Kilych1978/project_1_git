@@ -9,6 +9,7 @@ from dataclasses import replace
 from .guard import verify_candidate_pcm, same_map
 from .choice import verify_reference_grid
 from .recovery import restore_failures
+from .progress import timecode
 
 
 def failed(rows):
@@ -54,6 +55,12 @@ def settle(reference, target, source, candidate, fallback, schedules, settings,
                     and abs(r['residual_sec'])+settings.min_improvement < abs(r['baseline_residual_sec'])}
         history.append({'attempt': attempt+1, 'failed': len(bad), 'improved': len(improved),
                         'failed_windows': bad})
+        if progress is not None:
+            print(f'\nСквозная проверка: улучшенных контрольных точек {len(improved)}, отказов {len(bad)}.')
+            if bad:
+                centers=sorted({round(r['reference_time'],6) for r in bad})
+                print('Проблемные места эталона: '+', '.join(timecode(t) for t in centers[:4])+
+                      ('; остальные — в отчёте.' if len(centers)>4 else '.'))
         if not bad:
             return candidate, rows, history
         if attempt == 11: break

@@ -6,7 +6,7 @@ PASS: test_micro_search_recovers_known_shift
 [  8.33%] Проверка микросовмещения | t=00:00:01
 [100.00%] Проверка микросовмещения | t=00:00:06
 mkdir -p failed for path /home/agent/.config/matplotlib: [Errno 30] Read-only file system: '/home/agent/.config/matplotlib'
-Matplotlib created a temporary cache directory at /tmp/matplotlib-1g_mr6d_ because there was an issue with the default path (/home/agent/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+Matplotlib created a temporary cache directory at /tmp/matplotlib-kx4g5vnl because there was an issue with the default path (/home/agent/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
 Fontconfig error: No writable cache directories
 
 PASS: test_micro_refinement_keeps_true_local_shift

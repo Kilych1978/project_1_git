@@ -9,6 +9,7 @@ from dataclasses import replace
 import numpy as np
 from .model import TimeMap
 from .dsp import sinc_sample
+from .progress import slice_progress
 
 
 def sample_map(source,mapping,times,sample_rate,radius):
@@ -73,6 +74,8 @@ class BlendMap:
 
     def extent(self,other,ref_times):
         if self is other:return 0.
+        from .recovery import RestoredMap
+        if isinstance(other,RestoredMap):return other.extent(self,ref_times)
         # Conservative: cancellation of nominal delays cannot hide a blend.
         a=self.base.inverse(ref_times);b=other.inverse(ref_times)
         extent=np.nan_to_num(np.abs(a-b),nan=0.)
@@ -222,12 +225,12 @@ def gate_patches(reference,target,base,proposal,schedules,settings,reference_tim
         for schedule,times in schedules:
             rows+=verify_candidate_pcm(reference,target,base,candidate,schedule,target_times=times,
                 row_cache=source_cache,baseline_cache=before_cache,
-                progress=(lambda n,count,offset=done:progress(offset+n,total)) if progress else None)
+                progress=slice_progress(progress,done,total))
             done+=len(times)
         for step in (.125,.5):
             rows+=verify_reference_grid(reference,target,base,candidate,replace(settings,anchor_step=step),
                 reference_times,row_cache=fixed_cache,baseline_cache=fixed_before,
-                progress=(lambda n,count,offset=done:progress(offset+n,total)) if progress else None)
+                progress=slice_progress(progress,done,total))
             done+=len(reference_times)
         bad=[row for row in rows if row['status']=='REGRESSION' or
              (row['micro_changed'] and row['status']=='UNVERIFIABLE')]

@@ -24,6 +24,7 @@ from pcm_core.guard import (gate_micro, same_map, verify_render, render_verdict,
 from pcm_core.micro import collect, Measurement
 from pcm_core.model import TimeMap
 from pcm_core.render import render
+from pcm_core.progress import timecode
 
 
 class _ProgressCallback:
@@ -37,6 +38,10 @@ class _ProgressCallback:
         self.displayed = False
         self.timings = timings
         self.target_times = target_times
+        self.current_window=None
+
+    def window(self,start,end,cached=False):
+        self.current_window=(start,end,cached)
 
     def _start(self):
         if self.started is None:
@@ -52,6 +57,7 @@ class _ProgressCallback:
         self.progress = Progress()
         self.last = 0.
         self.displayed = False
+        self.current_window=None
         self._start()
 
     def __call__(self, done, total):
@@ -67,13 +73,23 @@ class _ProgressCallback:
                                  self.progress.speed(done))
         else:
             location = ''
-            if self.target_times is not None and len(self.target_times):
-                location = ' | момент ' + format_seconds(self.target_times[min(len(self.target_times)-1, max(0, int(done)-1))])
-            self.progress.update(percent, f'{done:.0f}/{total:.0f} точек{location} | ETA {eta}')
+            if self.current_window is not None:
+                start,end,cached=self.current_window
+                location=f' | эталон {timecode(start)} → {timecode(end)}'
+                if cached:location+=' (кеш)'
+            elif self.target_times is not None and len(self.target_times):
+                location = ' | точка ' + timecode(self.target_times[min(len(self.target_times)-1, max(0, int(done)-1))])
+            # Keep the real movie position before optional counters in narrow
+            # terminals. Progress.update preserves the right side of a line.
+            self.progress.update(percent, f'{done:.0f}/{total:.0f}{location} | ETA {eta}')
 
     def finish(self):
         self._start()
-        self.progress.done(100., 'Готово')
+        location=''
+        if not self.seconds and self.current_window is not None:
+            start,end,_=self.current_window
+            location=f' | эталон {timecode(start)} → {timecode(end)}'
+        self.progress.done(100., 'Готово'+location)
         if self.timings is not None:
             self.timings.append({'stage': self.title, 'elapsed_sec': time.monotonic()-self.started})
 
@@ -152,7 +168,7 @@ def _plot_pcm_overlays(reference, baseline, final, rows, output_dir, sample_rate
 
 
 def export_diagnostic_clips(reference, baseline, output_dir, sample_rate=48000, times=None, final=None,
-                            include_uniform=True, failure_times=(), candidate=None):
+                            include_uniform=True, failure_times=(), candidate=None, proposal=None):
     """Small mono PCM excerpts, same absolute timeline; never upload them."""
     duration = min(len(reference), len(baseline)) / sample_rate
     if duration < 5:
@@ -163,7 +179,7 @@ def export_diagnostic_clips(reference, baseline, output_dir, sample_rate=48000, 
     if duration < clip_length * 3 and include_uniform:
         centers = [duration / 2]
     centers += list(times or [])[:4 if include_uniform else 8]
-    centers += list(failure_times)[:12]
+    centers += [float(np.clip(t,margin,duration-margin)) for t in list(failure_times)[:12]]
     centers = sorted(set(round(float(t), 3) for t in centers if margin <= t <= duration - margin))
     clip_dir = output_dir / '_diagnostic_clips'
     clip_dir.mkdir(exist_ok=True)
@@ -190,6 +206,18 @@ def export_diagnostic_clips(reference, baseline, output_dir, sample_rate=48000, 
                     values = np.clip(values * 32768, -32768, 32767)
                 file.writeframes(values.astype('<i2').tobytes())
             entry['files'][name] = path.name
+        if proposal is not None:
+            # A proposal rejected before WAV writing still needs audible
+            # evidence at its failed windows. Sample ONLY these short clips.
+            from pcm_core.blend import sample_map
+            path=clip_dir/f'{index:02d}_proposal_target.wav'
+            with wave.open(str(path),'wb') as file:
+                file.setnchannels(1);file.setsampwidth(2);file.setframerate(sample_rate)
+                for begin in range(start,start+count,16384):
+                    end=min(begin+16384,start+count)
+                    values=sample_map(baseline,proposal,np.arange(begin,end)/sample_rate,sample_rate,16)
+                    file.writeframes(np.clip(np.rint(values),-32768,32767).astype('<i2').tobytes())
+            entry['files']['proposal_target']=path.name
         manifest['clips'].append(entry)
     (clip_dir / 'CLIPS.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
     destination = output_dir / 'DIAGNOSTIC_CLIPS.zip'
@@ -472,6 +500,7 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
     original_map, original_result = coarse_map, render_result
     published_candidate = None
     protection = None
+    proposed_plan = None
     try:
         reference = np.memmap(analysis['reference_pcm'], mode='r', dtype='<i2')
         baseline_pcm = render_result.get('verified_first_channel_pcm')
@@ -502,6 +531,14 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
                 reference, baseline, base, settings, report, progress)
         if protect_best:
             from pcm_core.preflight import settle
+            proposed_plan=fine
+            # Diagnostic snapshots are CURRENT-run evidence, never startup
+            # inputs. Retain the proposal even if end-to-end recovery later
+            # selects a fallback and replaces fine_map.
+            proposal_file=output_dir/'PCM_PROPOSAL_MAP.json'
+            proposal_file.write_text(json.dumps(fine.to_dict()),encoding='utf-8')
+            report['proposal_map_file']=proposal_file.name
+            report['verification_timebase']='same_reference_window_before_expected_written'
             # Incremental layer gates compare different intermediate plans.
             # Establish a safe baseline, then verify the COMPLETE stack
             # against both that baseline and the untouched source before
@@ -682,6 +719,15 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
                 # actual rejection (often an ambiguous splice elsewhere).
                 from pcm_core.preflight import failed
                 failures=failed(actual_rows)+failed(report.get('protected_output_windows',[]))
+                # Prioritize the LAST pre-render rejection. A fallback can
+                # pass native verification while hiding an earlier failure.
+                preflight_failures=[]
+                histories=[report.get('baseline_end_to_end_audit',[]),report.get('complete_plan_audit',[])]
+                histories+=report.get('native_recovery_audit',[])
+                for history in reversed(histories):
+                    for entry in reversed(history):
+                        preflight_failures.extend(entry.get('failed_windows',[]))
+                failures=preflight_failures+failures
                 failure_times=[]
                 for row in failures:
                     t=row['reference_time']
@@ -689,7 +735,8 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
                     if len(failure_times)==12:break
                 final_pcm = actual if report['status'] == 'PCM_REFINED' else baseline
                 clips = export_diagnostic_clips(reference, baseline, output_dir, settings.analysis_rate,
-                    diagnostic_times, final=final_pcm, failure_times=failure_times, candidate=actual)
+                    diagnostic_times, final=final_pcm, failure_times=failure_times, candidate=actual,
+                    proposal=proposed_plan if failure_times else None)
                 report['diagnostic_clips'] = str(clips) if clips else None
                 if make_plots and report['status'] == 'PCM_REFINED':
                     _plot_pcm_overlays(reference, baseline, actual, actual_rows, output_dir, settings.analysis_rate)

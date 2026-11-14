@@ -1,0 +1,47 @@
+{
+  "scope": "Ten supplied 8-second intervals, full-film clocks; unknown intervals not tested",
+  "checks": 5198,
+  "bad": [],
+  "improved": 2451,
+  "median_improved_ms": 0.001219223484847968,
+  "version": "6.9.11",
+  "full_movie_new_output_tested": false,
+  "new_volumes_crc_verified": 6,
+  "new_originals_sha256_verified": 131,
+  "original_complete_plan_failed": [
+    114,
+    11,
+    7,
+    4,
+    7,
+    3,
+    3,
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "original_final_proposal_improvement_marks": 121448,
+  "false_regression": {
+    "target_time_sec": 1028.3541666666667,
+    "candidate_reference_center_sec": 1028.3511666666668,
+    "protected_reference_center_sec": 1028.3524161175806,
+    "center_difference_ms": 1.2494509137468413,
+    "before_residual_sec": -0.0017463107638888906,
+    "after_residual_sec": -0.0017819010416666667,
+    "micro_changed": false,
+    "change_extent_sec": 0.0
+  },
+  "new_baseline_failed_counts": [
+    1,
+    0
+  ],
+  "new_proposal_failed_counts": [
+    71,
+    3,
+    2,
+    0
+  ],
+  "candidate_definition": "Fresh raw affine patches from full current-run measurements on the saved baseline; only ten available intervals validated"
+}

@@ -98,6 +98,11 @@ class CompleteRecoveryTests(unittest.TestCase):
                      'verified_first_channel_pcm':root/'src.pcm'},out,config,make_plots=False)
             self.assertEqual(report['status'],'PCM_REFINED',report.get('reason'))
             self.assertEqual(writer.call_count,1)
+            self.assertTrue((out/report['proposal_map_file']).is_file())
+            clips=json.loads((out/'_diagnostic_clips'/'CLIPS.json').read_text())
+            # The final WAV passed, but evidence of its pre-render rejected
+            # proposal must still be included for diagnosis.
+            self.assertIn('proposal_target',clips['clips'][0]['files'])
             self.assertGreater(report['complete_plan_audit'][0]['failed'],0)
             self.assertEqual(report['complete_plan_audit'][-1]['failed'],0)
             self.assertFalse(failed(report['actual_output_windows']))

@@ -6,6 +6,7 @@ from scipy.interpolate import PchipInterpolator, CubicHermiteSpline
 from scipy.signal import butter, sosfiltfilt
 from .dsp import mapped_window, ncc_valid, peak
 from .model import Piece, TimeMap, curve_spline
+from .progress import window
 
 
 @lru_cache(maxsize=24)
@@ -51,9 +52,9 @@ class _InverseMap:
 
 
 def measure_window(reference, target, mapping, target_time, settings, radius=None, window_sec=None,
-                   quantize_pcm16=False):
+                   quantize_pcm16=False, reference_time=None):
     sr = settings.analysis_rate
-    center = float(mapping.forward([target_time])[0])
+    center = float(mapping.forward([target_time])[0] if reference_time is None else reference_time)
     if not np.isfinite(center):
         return None
     # Keep training/holdout PCM regions disjoint even in --step 0.5/1 modes.
@@ -111,7 +112,7 @@ def measure_window(reference, target, mapping, target_time, settings, radius=Non
         # center delay is real. A shorter waveform window measures that center
         # without pretending that the residual rate is already corrected.
         shorter = measure_window(reference, target, mapping, target_time, settings, radius, window_sec=.040,
-                                 quantize_pcm16=quantize_pcm16)
+                                 quantize_pcm16=quantize_pcm16, reference_time=reference_time)
         if shorter and shorter["score"] >= settings.min_raw_score and shorter["margin"] >= settings.min_raw_margin:
             shorter["method"] += "-short"
             return shorter
@@ -204,6 +205,10 @@ def collect(reference, target, mapping, settings, log=print, progress=None, cent
     records = []
     centers = grid(mapping, settings) if centers is None else centers
     for i, t in enumerate(centers):
+        # Three independent training windows span the centre and neighbours.
+        center=float(mapping.forward([t])[0])
+        length=min(settings.micro_window,settings.anchor_step/8)+2*min(.45,settings.anchor_step/6)
+        window(progress,center,length)
         records.append(measure(reference, target, mapping, t, settings))
         if progress:
             progress(i + 1, len(centers))

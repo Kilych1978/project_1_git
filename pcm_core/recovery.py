@@ -9,6 +9,10 @@ import numpy as np
 def extent(mapping, other, times):
     if mapping is other:
         return 0.
+    if isinstance(other,RestoredMap) and not isinstance(mapping,RestoredMap):
+        # A protected restored plan can share a nominal clock with different
+        # actual PCM. Compare its sampled branches, not just that clock.
+        return other.extent(mapping,times)
     if hasattr(mapping, 'extent'):
         return mapping.extent(other, times)
     if hasattr(other, 'extent'):

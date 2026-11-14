@@ -1,3 +1,6 @@
+ИСТОРИЧЕСКИЙ ПРОГОН 6.9.10 ОТ 11.11.2026.
+Текущие проверки 6.9.11: TEST_LOG.txt, NATIVE_TEST_LOG.txt и docs/TEST_RESULTS_RU.md.
+
 
 ==============================================================================
 UNIVERSAL AUDIO WAVEFORM SYNC
