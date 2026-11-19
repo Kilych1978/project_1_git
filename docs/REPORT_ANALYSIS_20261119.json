@@ -1,0 +1,149 @@
+{
+  "status": "PCM_REFINED",
+  "additional_improvement_confirmed": true,
+  "candidate_verdict": "VERIFIED_PCM",
+  "actual_windows_count": 95317,
+  "protected_windows_count": 263367,
+  "actual_bad_count": 0,
+  "protected_bad_count": 0,
+  "elapsed_sec": 343865.20245640003,
+  "complete_history": [
+    {
+      "attempt": 1,
+      "failed": 110,
+      "improved": 122108,
+      "padding_sec": 0.0
+    },
+    {
+      "attempt": 2,
+      "failed": 9,
+      "improved": 122094,
+      "padding_sec": 0.0625
+    },
+    {
+      "attempt": 3,
+      "failed": 6,
+      "improved": 122074,
+      "padding_sec": 0.125
+    },
+    {
+      "attempt": 4,
+      "failed": 3,
+      "improved": 122062,
+      "padding_sec": 0.25
+    },
+    {
+      "attempt": 5,
+      "failed": 6,
+      "improved": 122043,
+      "padding_sec": 0.5
+    },
+    {
+      "attempt": 6,
+      "failed": 2,
+      "improved": 122013,
+      "padding_sec": 1.0
+    },
+    {
+      "attempt": 7,
+      "failed": 2,
+      "improved": 121980,
+      "padding_sec": 2.0
+    },
+    {
+      "attempt": 8,
+      "failed": 0,
+      "improved": 121916
+    }
+  ],
+  "volume_crc_verified": 7,
+  "original_file_sha256_verified": 132,
+  "total_run_reported_min": 5823.16,
+  "approx_large_gaps_sec": 226462.46291971626,
+  "large_gaps": [
+    {
+      "stage": "ПРОВЕРКА БАЗОВОГО PCM | проход 1/3 | сетка 2/2",
+      "from": 54283,
+      "to": 54507,
+      "total": 64286,
+      "approx_elapsed_jump_sec": 70735.55733251391,
+      "earlier_elapsed_sec": 520.960511846446,
+      "later_elapsed_sec": 71256.51784436037
+    },
+    {
+      "stage": "УТОЧНЁННЫЙ ВАРИАНТ | НЕЗАВИСИМАЯ ПРОВЕРКА ТОЧЕЧНЫХ ПОПРАВОК | проход 2/11",
+      "from": 32832,
+      "to": 32998,
+      "total": 74790,
+      "approx_elapsed_jump_sec": 37295.913778612616,
+      "earlier_elapsed_sec": 899.8712998712999,
+      "later_elapsed_sec": 38195.78507848392
+    },
+    {
+      "stage": "ПРОВЕРКА ДОПОЛНИТЕЛЬНЫХ PCM-ОТРЕЗКОВ | сдвинутая сетка | проход 1/9",
+      "from": 172587,
+      "to": 172655,
+      "total": 263367,
+      "approx_elapsed_jump_sec": 8564.474781949739,
+      "earlier_elapsed_sec": 4539.962062128222,
+      "later_elapsed_sec": 13104.436844077962
+    },
+    {
+      "stage": "ПРОВЕРКА ДОПОЛНИТЕЛЬНЫХ PCM-ОТРЕЗКОВ | сдвинутая сетка | проход 3/9",
+      "from": 30863,
+      "to": 31299,
+      "total": 263367,
+      "approx_elapsed_jump_sec": 41464.1568125871,
+      "earlier_elapsed_sec": 135.1311547328218,
+      "later_elapsed_sec": 41599.28796731992
+    },
+    {
+      "stage": "СКВОЗНАЯ ПРОВЕРКА PCM | проход 1/12 | время эталона | окно 15.625 мс",
+      "from": 3305,
+      "to": 3490,
+      "total": 84025,
+      "approx_elapsed_jump_sec": 5177.388573437252,
+      "earlier_elapsed_sec": 89.83114469772052,
+      "later_elapsed_sec": 5267.219718134972
+    },
+    {
+      "stage": "СКВОЗНАЯ ПРОВЕРКА PCM | проход 1/12 | время эталона | окно 62.5 мс",
+      "from": 28075,
+      "to": 28109,
+      "total": 84025,
+      "approx_elapsed_jump_sec": 45362.548868112586,
+      "earlier_elapsed_sec": 2134.603217158177,
+      "later_elapsed_sec": 47497.15208527076
+    },
+    {
+      "stage": "СОХРАННОСТЬ БАЗОВОГО РЕЗУЛЬТАТА | сетка 2/2",
+      "from": 44232,
+      "to": 44308,
+      "total": 84813,
+      "approx_elapsed_jump_sec": 17862.42277250306,
+      "earlier_elapsed_sec": 1299.2421083758409,
+      "later_elapsed_sec": 19161.664880878903
+    }
+  ],
+  "timing_limits": "Elapsed wall-clock, including potential sleep; ETA-derived gaps are estimates, not CPU profiles",
+  "sleep_or_suspension_consistent_with_gaps": true,
+  "display_release": "6.9.12",
+  "confirmed_algorithm_release": "6.9.11",
+  "algorithm_optimizations_applied": false,
+  "six_channel_cli_equivalence": {
+    "6.9.11": {
+      "wav_sha256": "3b0edbb5dd6e1edf65577b36c320ea0ae2c07eeefb7cf82fc62b4b94e6ef530e",
+      "verdict": "VERIFIED_PCM",
+      "channels": 6,
+      "input_hashes_unchanged": true,
+      "fine_map_sha256": "e6b4244c2e1b4f91dd2f4e0cbb356686e841703cbf2a08d9a69ea2ce4f730362"
+    },
+    "6.9.12": {
+      "wav_sha256": "3b0edbb5dd6e1edf65577b36c320ea0ae2c07eeefb7cf82fc62b4b94e6ef530e",
+      "verdict": "VERIFIED_PCM",
+      "channels": 6,
+      "input_hashes_unchanged": true,
+      "fine_map_sha256": "e6b4244c2e1b4f91dd2f4e0cbb356686e841703cbf2a08d9a69ea2ce4f730362"
+    }
+  }
+}

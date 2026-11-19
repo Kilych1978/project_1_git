@@ -24,11 +24,11 @@ from pcm_core.guard import (gate_micro, same_map, verify_render, render_verdict,
 from pcm_core.micro import collect, Measurement
 from pcm_core.model import TimeMap
 from pcm_core.render import render
-from pcm_core.progress import timecode
+from progress_display import words, heading, scope_lines
 
 
 class _ProgressCallback:
-    def __init__(self, title, seconds=False, timings=None, target_times=None):
+    def __init__(self, title, seconds=False, timings=None, target_times=None, duration=None):
         self.progress = Progress()
         self.title = title
         self.base_title = title
@@ -39,6 +39,8 @@ class _ProgressCallback:
         self.timings = timings
         self.target_times = target_times
         self.current_window=None
+        self.duration=duration
+        self.last_position=None
 
     def window(self,start,end,cached=False):
         self.current_window=(start,end,cached)
@@ -48,7 +50,10 @@ class _ProgressCallback:
             self.started = time.monotonic()
         if not self.displayed:
             stage_started = self.progress.stage_started
-            self.progress.stage(self.title)
+            operation,details=heading(self.title)
+            lines=[operation,*scope_lines(self.duration,self.target_times,self.seconds)]
+            if details:lines.append(details)
+            self.progress.stage('\n'.join(lines))
             self.progress.stage_started = stage_started
             self.displayed = True
 
@@ -58,37 +63,39 @@ class _ProgressCallback:
         self.last = 0.
         self.displayed = False
         self.current_window=None
+        self.last_position=None
         self._start()
 
     def __call__(self, done, total):
+        if self.seconds and total>0:self.duration=total
         self._start()
         now = time.monotonic()
         if now - self.last < .5 and done < total:
             return
         self.last = now
         percent = 100. * done / total if total > 0 else 0.
-        eta = format_seconds(self.progress.eta(done, total))
+        eta = words(self.progress.eta(done, total),'nearest')
         if self.seconds:
-            self.progress.update(percent, 'ETA ' + eta, done, total,
-                                 self.progress.speed(done))
+            self.last_position=done
+            self.progress.update(percent,'Сейчас: '+words(done)+' | Осталось: '+eta,
+                                 speed=self.progress.speed(done))
         else:
             location = ''
             if self.current_window is not None:
-                start,end,cached=self.current_window
-                location=f' | эталон {timecode(start)} → {timecode(end)}'
-                if cached:location+=' (кеш)'
+                start,end,_=self.current_window
+                self.last_position=(start+end)/2
+                location=' | Сейчас: '+words(self.last_position)
             elif self.target_times is not None and len(self.target_times):
-                location = ' | точка ' + timecode(self.target_times[min(len(self.target_times)-1, max(0, int(done)-1))])
+                self.last_position=self.target_times[min(len(self.target_times)-1,max(0,int(done)-1))]
+                location=' | Сейчас: '+words(self.last_position)
             # Keep the real movie position before optional counters in narrow
             # terminals. Progress.update preserves the right side of a line.
-            self.progress.update(percent, f'{done:.0f}/{total:.0f}{location} | ETA {eta}')
+            self.progress.update(percent, f'{done:.0f}/{total:.0f}{location} | Осталось: {eta}')
 
     def finish(self):
         self._start()
         location=''
-        if not self.seconds and self.current_window is not None:
-            start,end,_=self.current_window
-            location=f' | эталон {timecode(start)} → {timecode(end)}'
+        if self.last_position is not None:location=' | Позиция: '+words(self.last_position)
         self.progress.done(100., 'Готово'+location)
         if self.timings is not None:
             self.timings.append({'stage': self.title, 'elapsed_sec': time.monotonic()-self.started})
@@ -493,7 +500,8 @@ def refine_rendered_audio(selected, analysis, coarse_map, render_result, output_
               'independent_windows': [], 'actual_output_windows': [], 'audit': [],
               'coarse_algorithm': 'original v6.9.1', 'measurements': [], 'stage_timings_sec': []}
     def progress(title, seconds=False, target_times=None):
-        return _ProgressCallback(title, seconds, report['stage_timings_sec'], target_times)
+        return _ProgressCallback(title, seconds, report['stage_timings_sec'], target_times,
+                                 duration=report.get('expected_output_duration'))
     reference = baseline = actual = None
     measurements, holdouts, actual_rows = [], [], []
     candidate_path = None

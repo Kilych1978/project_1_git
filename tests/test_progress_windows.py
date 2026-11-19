@@ -13,6 +13,7 @@ from pcm_core.guard import verify_candidate_pcm
 from pcm_core.choice import verify_reference_grid
 from pcm_core.model import TimeMap
 from pcm_core.config import Settings
+from progress_display import words,scope_lines
 from .helpers import soundtrack,SR
 
 
@@ -40,21 +41,43 @@ class ProgressWindowTests(unittest.TestCase):
         verify_reference_grid(pcm,pcm,base,final,s,[1.5],progress=fixed)
         a,b,_=fixed.windows[-1];self.assertAlmostEqual((a+b)/2,1.5)
 
-    def test_terminal_shows_milliseconds_arrow_and_keeps_single_line_within_width(self):
+    def test_terminal_shows_readable_position_and_keeps_single_line_within_width(self):
         class TTY(io.StringIO):
             def isatty(self):return True
         output=TTY()
         with contextlib.redirect_stdout(output),patch('shutil.get_terminal_size',return_value=os.terminal_size((80,24))):
-            p=_ProgressCallback('Проверка | проход 2/3 | сетка 1/2')
-            p.window(912.098,912.223);p(500,1000);p.finish()
+            p=_ProgressCallback('Проверка | проход 2/11 | сетка 1/2',duration=5252.01,
+                                target_times=[.2,5251.8])
+            p.window(4056.476,4056.601);p(8114,10504);p.finish()
         records=output.getvalue().split('\r')[1:]
         self.assertTrue(records)
         for record in records:
             line=record.split('\n')[0]
             self.assertLessEqual(len(line),79)
-        self.assertIn('00:15:12,098 → 00:15:12,223',output.getvalue())
+        self.assertIn('Сейчас: 1 ч 07 мин 36 с',output.getvalue())
+        self.assertIn('Длительность дорожки: 1 ч 27 мин 32 с',output.getvalue())
+        self.assertIn('Область: весь фильм (контрольные точки)',output.getvalue())
+        self.assertIn('Проход: 2, максимум 11 | Сетка: 1 из 2',output.getvalue())
+        self.assertNotIn('→',output.getvalue())
+        self.assertNotIn('4056.',output.getvalue())
+        # Diagnostic millisecond formatting is deliberately unchanged.
         self.assertEqual(timecode(59.9996),'00:01:00,000')
         self.assertEqual(timecode(3612.098),'01:00:12,098')
+
+    def test_local_points_are_described_without_inventing_a_contiguous_chunk(self):
+        lines=scope_lines(5252.,[912.098,913.,1090.,1140.1])
+        self.assertEqual(lines[1],'Контрольные точки: с 15 мин 12 с по 19 мин 01 с')
+        self.assertNotIn('весь фильм',' '.join(lines))
+        self.assertEqual(words(33.2),'33 с')
+        self.assertEqual(words(97.8,'nearest'),'1 мин 38 с')
+
+    def test_audio_render_progress_uses_seconds_position_and_real_duration(self):
+        out=io.StringIO()
+        with contextlib.redirect_stdout(out):
+            p=_ProgressCallback('Запись всех каналов',seconds=True)
+            p(4056.5,5252.01)
+        self.assertIn('Сейчас: 1 ч 07 мин 36 с',out.getvalue())
+        self.assertIn('Длительность дорожки: 1 ч 27 мин 32 с',out.getvalue())
 
 
 if __name__=='__main__':unittest.main()
