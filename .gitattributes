@@ -1,0 +1,5 @@
+*.cmd -text
+*.ps1 -text
+parts/* -text
+*.mp4 binary
+*.png binary

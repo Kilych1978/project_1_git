@@ -1,0 +1,15 @@
+{
+  "sample_only": true,
+  "source_sha256": "dd6e696cb33d8ab60aa1579d5a2fe4df81eb7f304e2a7141a70e45d403299613",
+  "output_sha256": "602ffcbd73a3e6ae14d24f0d1e9be7ed7c245546bdf9118ece2def8392a6449f",
+  "frames": 167,
+  "all_frame_timestamps_equal": true,
+  "duration_seconds": "6.916000",
+  "native_format_and_color_metadata_equal": true,
+  "decoded_native_yuv_sha256": "acd2094b82c0202598753da09f2deb645a841b4a6b9986af41c0b7766f17d236",
+  "lossless_round_trip": true,
+  "changed_samples_outside_repair_masks": 0,
+  "changed_percent_of_native_yuv_bytes": 0.3967103929535582,
+  "file_size_bytes": 120781157,
+  "codec": "ffv1"
+}

@@ -1,0 +1,49 @@
+{
+  "file": {
+    "name": "Katala_sample_REPAIRED_FINAL.mkv",
+    "size": 120781157,
+    "sha256": "602ffcbd73a3e6ae14d24f0d1e9be7ed7c245546bdf9118ece2def8392a6449f"
+  },
+  "parts": [
+    {
+      "path": "parts/Katala.001",
+      "size": 16777216,
+      "sha256": "a28a82483038c30c5bc28493de043786ad7f14cd75f9740fc20c435fa76ecb92"
+    },
+    {
+      "path": "parts/Katala.002",
+      "size": 16777216,
+      "sha256": "16f00d88e99d45a6bcb6c9ad48f9af8b75406413b6702fcace00624380427099"
+    },
+    {
+      "path": "parts/Katala.003",
+      "size": 16777216,
+      "sha256": "5131f0eedb16292979d5acda13a6f950f5dd956bcad67dfd12c2a5912d77c2f6"
+    },
+    {
+      "path": "parts/Katala.004",
+      "size": 16777216,
+      "sha256": "1c686532de94ca0a385b4dd6e6e50e50aebea83f32f9b939149b5dc21a5c82fa"
+    },
+    {
+      "path": "parts/Katala.005",
+      "size": 16777216,
+      "sha256": "261b4a324dacec594ce65e8747d5e8ab26f11b62960bab569f63c7cf1fac9080"
+    },
+    {
+      "path": "parts/Katala.006",
+      "size": 16777216,
+      "sha256": "ac6baff0e0005a6448cb2f656df278d262d5496b2194c59538c791c9d0724291"
+    },
+    {
+      "path": "parts/Katala.007",
+      "size": 16777216,
+      "sha256": "89a17be5beb85f87fc6f67ea2afaa4348e177b50f268717dec06f43e71f97d1c"
+    },
+    {
+      "path": "parts/Katala.008",
+      "size": 3340645,
+      "sha256": "18087acc0d4ce83b407e0f3ebf140dbf4341c57580dc6d2088bc4d895c334658"
+    }
+  ]
+}
