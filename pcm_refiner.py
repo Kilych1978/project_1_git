@@ -77,26 +77,26 @@ class _ProgressCallback:
         eta = words(self.progress.eta(done, total),'nearest')
         if self.seconds:
             self.last_position=done
-            self.progress.update(percent,'Сейчас: '+words(done)+' | Осталось: '+eta,
+            self.progress.update(percent,'At '+words(done)+' | ETA '+eta,
                                  speed=self.progress.speed(done))
         else:
             location = ''
             if self.current_window is not None:
                 start,end,_=self.current_window
                 self.last_position=(start+end)/2
-                location=' | Сейчас: '+words(self.last_position)
+                location=' | At '+words(self.last_position)
             elif self.target_times is not None and len(self.target_times):
                 self.last_position=self.target_times[min(len(self.target_times)-1,max(0,int(done)-1))]
-                location=' | Сейчас: '+words(self.last_position)
-            # Keep the real movie position before optional counters in narrow
+                location=' | At '+words(self.last_position)
+            # Keep the actual reference position before optional counters in narrow
             # terminals. Progress.update preserves the right side of a line.
-            self.progress.update(percent, f'{done:.0f}/{total:.0f}{location} | Осталось: {eta}')
+            self.progress.update(percent, f'{done:.0f}/{total:.0f} probes{location} | ETA {eta}')
 
     def finish(self):
         self._start()
         location=''
-        if self.last_position is not None:location=' | Позиция: '+words(self.last_position)
-        self.progress.done(100., 'Готово'+location)
+        if self.last_position is not None:location=' | At '+words(self.last_position)
+        self.progress.done(100., 'Done'+location)
         if self.timings is not None:
             self.timings.append({'stage': self.title, 'elapsed_sec': time.monotonic()-self.started})
 

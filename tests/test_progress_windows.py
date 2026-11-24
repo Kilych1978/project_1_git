@@ -54,10 +54,10 @@ class ProgressWindowTests(unittest.TestCase):
         for record in records:
             line=record.split('\n')[0]
             self.assertLessEqual(len(line),79)
-        self.assertIn('Сейчас: 1 ч 07 мин 36 с',output.getvalue())
-        self.assertIn('Длительность дорожки: 1 ч 27 мин 32 с',output.getvalue())
-        self.assertIn('Область: весь фильм (контрольные точки)',output.getvalue())
-        self.assertIn('Проход: 2, максимум 11 | Сетка: 1 из 2',output.getvalue())
+        self.assertIn('At 01:07:36',output.getvalue())
+        self.assertIn('Track: 01:27:32',output.getvalue())
+        self.assertIn('Scope: full reference track; scheduled checkpoints',output.getvalue())
+        self.assertIn('Pass: 2/11 (limit) | Grid: 1/2',output.getvalue())
         self.assertNotIn('→',output.getvalue())
         self.assertNotIn('4056.',output.getvalue())
         # Diagnostic millisecond formatting is deliberately unchanged.
@@ -66,18 +66,18 @@ class ProgressWindowTests(unittest.TestCase):
 
     def test_local_points_are_described_without_inventing_a_contiguous_chunk(self):
         lines=scope_lines(5252.,[912.098,913.,1090.,1140.1])
-        self.assertEqual(lines[1],'Контрольные точки: с 15 мин 12 с по 19 мин 01 с')
-        self.assertNotIn('весь фильм',' '.join(lines))
-        self.assertEqual(words(33.2),'33 с')
-        self.assertEqual(words(97.8,'nearest'),'1 мин 38 с')
+        self.assertEqual(lines[0],'Checkpoints: 00:15:12 - 00:19:01 | Track: 01:27:32')
+        self.assertNotIn('full reference track',' '.join(lines))
+        self.assertEqual(words(33.2),'00:00:33')
+        self.assertEqual(words(97.8,'nearest'),'00:01:38')
 
     def test_audio_render_progress_uses_seconds_position_and_real_duration(self):
         out=io.StringIO()
         with contextlib.redirect_stdout(out):
             p=_ProgressCallback('Запись всех каналов',seconds=True)
             p(4056.5,5252.01)
-        self.assertIn('Сейчас: 1 ч 07 мин 36 с',out.getvalue())
-        self.assertIn('Длительность дорожки: 1 ч 27 мин 32 с',out.getvalue())
+        self.assertIn('At 01:07:36',out.getvalue())
+        self.assertIn('Track: 01:27:32',out.getvalue())
 
 
 if __name__=='__main__':unittest.main()

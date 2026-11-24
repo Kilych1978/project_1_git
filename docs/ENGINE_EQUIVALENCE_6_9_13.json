@@ -1,0 +1,63 @@
+{
+  "base_version": "6.9.12",
+  "base_commit": "7c4bdf3",
+  "all_protected_module_bytes_equal": true,
+  "protected_modules_sha256": {
+    "aligner.py": "5372059c7fbb6f5e36a3c09e40930b5989d7dc5897b94c6cf7ab1553e1d5c79c",
+    "analyzer.py": "e439171258896c3d97ea70e40f782bc8aacbd13a648b9eb12a42f981d947ff1b",
+    "applier.py": "ef46de8778ef3b152b8e299a10f005a6ff42af8acfbe8e63826a7da68b96620e",
+    "confidence.py": "2a733bdf33567dce08c32463a1174a91e910f3a3e2277e8854d59d0d2605edc7",
+    "config.py": "78fe73deb8d019ace313a2a879d1d38e78771a95f16203c1524e8c66265d3d26",
+    "diagnose_points.py": "6db2e2daa97e8de729201842c1ced700c7a9cc9af13946d1423d9677214eb7cc",
+    "launcher.py": "9e74655a92fb6b55eeb7c9721e2c5def0aaa3de885a47d2a16b89cd7cb274e66",
+    "mapper.py": "fc17bc1ddf1b3f5f34a9f8c575f84d967d239058bd0b0dbbd1097a15b794664e",
+    "micro_launcher.py": "600e40812a191d5e990aa0dbcb68703ea88fafc11ac2bb9a4a003d4e0267316a",
+    "micro_refiner.py": "de38d4cfc767dcf463f86b7bb01b21f0893dd439058d8d5d76affbc9e1f9e503",
+    "pcm_best.py": "181d755514ad1906db08cdd7127331eec1162f4215d5af31e60dd7d7cf7b6ac7",
+    "pcm_core/__init__.py": "b140978fc440f1cd1e3de0dde006d8ed9c326e333277b8356527fb4ddd330665",
+    "pcm_core/audio.py": "eb2f4621e1c04a8659daaca843d39a316189394871ab0c25c343986ddf6e5f07",
+    "pcm_core/blend.py": "567770c56a0714bdd7b609114fe59638015d066f8d82377f805cfeaf16462d00",
+    "pcm_core/choice.py": "ff491ccd777cad2c34db694a42989bcd0dd3e58bdf81ffafedca26b939e0edb2",
+    "pcm_core/config.py": "8ff3cc2332a0046ca764f82e7847e02fb6fde5622ab8dc65828c9074c34e324c",
+    "pcm_core/dsp.py": "182ffcf826d655273f813e69c2a58b86044dda9832706677badf6791a95f4aa1",
+    "pcm_core/guard.py": "573aa98acbc289f3aa97aee2f293436b35650123f0dff3f2a162ea3a2b7e1780",
+    "pcm_core/micro.py": "2b17cfa16479949b1179c7d3adefcadbad0c6bca93e00cc241c30a9d28932459",
+    "pcm_core/model.py": "d936d069a451778e4c441867c904a465e0e45d46207193ad865c1b392da93044",
+    "pcm_core/preflight.py": "5b71a03c64cf14157f851e921fbb3c1f0fd1d0a68100e0af69fed9908b43d41f",
+    "pcm_core/progress.py": "da44de8541afba9147e64e3801a19408423927b4c371df4c2e9ab66f0bc95975",
+    "pcm_core/recovery.py": "343a46f55ce2a551a932fe95ed10e97cd3fbc5c9498eaaa40b383c6d80f6f9be",
+    "pcm_core/render.py": "9d943221b4c84c6cb703bf66b4f4b2ebcf6f40f9728d83ddc5fad0fb95861984",
+    "pcm_core/residual_map.py": "64d6157d3477f0c2e1ace5b383ff25a951f43b9f3cd9eb89ad5b8017fcac0ac4",
+    "pcm_core/wav.py": "1812185ce96a6664ba7284ffb40d565ce87c0cc15ca1c829e301a03274742338",
+    "render_guard.py": "8372a7429b949ce37ca61a009abdf0d937bfeabf5550a29315f40dadd7f2714f",
+    "renderer.py": "bf7ae4502307ad62c07a4cfed20d27286fdb25c7c52d718be4ed1a6478fdac81",
+    "reports.py": "1eddb0389fd2ac17b32fad9e96f14b6873f15e630e2c2356c4407ac351e17199",
+    "safety.py": "63c56cef559a1d971b6cc15db9d638910a6e859e0a73fc643ccdf3eae5dc3b38",
+    "scanner.py": "b4b8beea1e26864075195547623633a5215de4bd509d068dcc97c6ea83ce28c6",
+    "self_test_v6_8.py": "fb60354020a508457788c60bda6589a1440eae79d4e8745e753b9866c1652178",
+    "self_test_v6_9.py": "d0cf9cb9f392b7b507da8835130f1d96cbfd8a393bf97f403171bf97ae72491d",
+    "validator.py": "d7f648d737124bbcebb652362f52129c1a19479de6401cf97a4862870698f009"
+  },
+  "presentation_exclusions": {
+    "common.py": {
+      "processing_ast_equal": true,
+      "excluded_display_classes": [
+        "Progress"
+      ],
+      "sha256": "bf0ddf00c813c3cce29d9c4a7087ed09937a19dfb0f76c6817a49b35ffe6f454"
+    },
+    "pcm_refiner.py": {
+      "processing_ast_equal": true,
+      "excluded_display_classes": [
+        "_ProgressCallback"
+      ],
+      "sha256": "cafb75d657e851cadc450a2a7e015242930c49ccd1077dff4147e067d135102d"
+    }
+  },
+  "other_modified_runtime_files": [
+    "progress_display.py (clock and header formatting)",
+    "console_en.py (terminal translation only)",
+    "diagnostics.py (English terminal decorator only)",
+    "start_sync.py (English terminal context only)"
+  ]
+}

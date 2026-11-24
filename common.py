@@ -14,11 +14,13 @@ import math
 import shutil
 import sys
 import time
+import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 from config import BASE_DIR
+from console_en import english
 
 
 @dataclass
@@ -59,6 +61,9 @@ class SelectedTracks:
     target: AudioInfo
 
 class Progress:
+    _display_stream = None
+    _display_heading = None
+    _display_scope = None
     """
     Универсальный вывод прогресса.
 
@@ -89,14 +94,21 @@ class Progress:
 
     def stage(self, name: str, overall_percent: float = 0.0):
         self.stage_started = time.time()
-
-        print()
-        print("=" * min(78, max(1, shutil.get_terminal_size().columns - 1)))
-
-        # Заголовок этапа — это только заголовок.
-        # Процент относится к реальной операции и показывается в update()/done().
-        print(f"{self.context} | {name}" if self.context else name)
-        print("=" * min(78, max(1, shutil.get_terminal_size().columns - 1)))
+        if Progress._display_stream is not sys.stdout:
+            Progress._display_stream=sys.stdout
+            Progress._display_heading=Progress._display_scope=None
+        lines=english(f'{self.context} | {name}' if self.context else name).splitlines()
+        title=lines[0] if lines else ''
+        width=min(78,max(20,shutil.get_terminal_size().columns-1))
+        if title!=Progress._display_heading:
+            print('\n'+'='*width)
+            for part in textwrap.wrap(title,width=width,break_long_words=False,break_on_hyphens=False):print(part)
+            Progress._display_heading=title
+        for line in lines[1:]:
+            is_scope=line.startswith(('Scope:','Checkpoints:','Checkpoint:'))
+            if is_scope and line==Progress._display_scope:continue
+            if is_scope:Progress._display_scope=line
+            print(line)
 
     # --------------------------------------------------------
     # Обычный процент
@@ -121,10 +133,10 @@ class Progress:
         line = f"[{percent:6.2f}%]"
 
         if self.context:
-            line += f" {self.context} |"
+            line += f" {english(self.context)} |"
 
         if message:
-            line += f" {message}"
+            line += f" {english(message)}"
 
         if processed_sec is not None:
             line += (
@@ -156,8 +168,8 @@ class Progress:
             prefix = f"[{percent:6.2f}%] "
             room = width - len(prefix)
             text = line[len(prefix):]
-            line = prefix + (('…' + text[-(room-1):]) if ' | ' in text and room > 1
-                             else text[:max(0, room-1)] + '…')
+            line = prefix + (('...' + text[-(room-3):]) if ' | ' in text and room > 3
+                             else text[:max(0, room-3)] + '...')
             line = line[:width]
         if sys.stdout.isatty():
             padding = max(0, min(self._last_width, width) - len(line))
