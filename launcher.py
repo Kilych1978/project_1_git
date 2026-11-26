@@ -945,6 +945,8 @@ def main():
         rendered_path,
         output_dir,
         validation_interval_sec=RENDER_GUARD_DENSE_VALIDATION_INTERVAL_SEC,
+        expected_output_duration=(pcm_report.get('expected_output_duration')
+                                  if pcm_report.get('status') == 'PCM_REFINED' else None),
     )
 
     final_effectiveness_report = save_final_effectiveness_report(
@@ -1006,6 +1008,9 @@ def main():
         "final_render_validation": final_verification["metrics"],
         "final_render_duration_difference_from_reference": float(final_verification["duration_difference"]),
         "final_render_duration_check": bool(final_verification["duration_ok"]),
+        "final_render_expected_duration": final_verification.get('expected_output_duration',selected.reference.duration),
+        "final_render_reference_duration_check": final_verification.get('reference_duration_ok',final_verification['duration_ok']),
+        "final_render_duration_check_enforced": final_verification.get('duration_check_enforced',True),
         "final_render_duration_diagnostics": final_verification.get("duration_diagnostics", {}),
         "final_effectiveness_report": str(final_effectiveness_report),
         "audio_rendered": not bool(render_result.get('copied_without_reencode', False)),

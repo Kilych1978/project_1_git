@@ -55,7 +55,6 @@
     "confidence.py": "2a733bdf33567dce08c32463a1174a91e910f3a3e2277e8854d59d0d2605edc7",
     "config.py": "78fe73deb8d019ace313a2a879d1d38e78771a95f16203c1524e8c66265d3d26",
     "diagnose_points.py": "6db2e2daa97e8de729201842c1ced700c7a9cc9af13946d1423d9677214eb7cc",
-    "launcher.py": "9e74655a92fb6b55eeb7c9721e2c5def0aaa3de885a47d2a16b89cd7cb274e66",
     "mapper.py": "fc17bc1ddf1b3f5f34a9f8c575f84d967d239058bd0b0dbbd1097a15b794664e",
     "micro_launcher.py": "600e40812a191d5e990aa0dbcb68703ea88fafc11ac2bb9a4a003d4e0267316a",
     "micro_refiner.py": "de38d4cfc767dcf463f86b7bb01b21f0893dd439058d8d5d76affbc9e1f9e503",
@@ -75,17 +74,19 @@
     "pcm_core/render.py": "9d943221b4c84c6cb703bf66b4f4b2ebcf6f40f9728d83ddc5fad0fb95861984",
     "pcm_core/residual_map.py": "64d6157d3477f0c2e1ace5b383ff25a951f43b9f3cd9eb89ad5b8017fcac0ac4",
     "pcm_core/wav.py": "1812185ce96a6664ba7284ffb40d565ce87c0cc15ca1c829e301a03274742338",
-    "renderer.py": "bf7ae4502307ad62c07a4cfed20d27286fdb25c7c52d718be4ed1a6478fdac81",
     "scanner.py": "b4b8beea1e26864075195547623633a5215de4bd509d068dcc97c6ea83ce28c6",
     "self_test_v6_8.py": "fb60354020a508457788c60bda6589a1440eae79d4e8745e753b9866c1652178",
     "self_test_v6_9.py": "d0cf9cb9f392b7b507da8835130f1d96cbfd8a393bf97f403171bf97ae72491d",
     "validator.py": "d7f648d737124bbcebb652362f52129c1a19479de6401cf97a4862870698f009"
   },
-  "unchanged_module_count": 31,
+  "unchanged_module_count": 29,
   "processing_fixes": [
     "safety.py",
     "render_guard.py",
-    "map_geometry.py"
+    "map_geometry.py",
+    "renderer.py: original-baseline and declared-plan duration validation",
+    "launcher.py: final declared-plan expectation and metadata"
   ],
-  "reports_py_change": "terminal fallback explanation only"
+  "reports_py_change": "terminal fallback explanation only",
+  "renderer_other_definitions_ast_equal": true
 }

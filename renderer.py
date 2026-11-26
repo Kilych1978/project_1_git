@@ -821,34 +821,62 @@ def verify_rendered_sync(
     output_dir: Path,
     validation_interval_sec: float = 60.0,
     progress: Progress | None = None,
+    expected_output_duration: float | None = None,
 ):
     """
     Финальная независимая проверка уже готового файла.
 
-    Здесь проверяется не только синхронизация, но и критическая для WAV/RF64
-    вещь: реальная длительность output должна соответствовать Reference timeline.
+    Новый файл обязан соответствовать длительности эталона или явно заданного
+    PCM-плана. Сохранённый исходный TARGET не выдаётся за результат рендера:
+    его отличие от длительности эталона остаётся диагностикой, без аварии.
     """
     verify_info = probe_audio_file(output_path)
     if verify_info is None or verify_info.duration <= 0:
         raise RuntimeError("Не удалось получить duration rendered output.")
 
-    expected_duration = float(selected.reference.duration)
-    duration_difference = float(verify_info.duration - expected_duration)
-    duration_ok = abs(duration_difference) <= 0.50
+    reference_duration = float(selected.reference.duration)
+    if expected_output_duration is not None and not _finite_positive(expected_output_duration):
+        raise ValueError('Ожидаемая длительность PCM-плана должна быть конечной и положительной.')
+    expected_duration = (reference_duration if expected_output_duration is None
+                         else float(expected_output_duration))
+    expectation_basis = 'reference' if expected_output_duration is None else 'declared_pcm_plan'
+    is_original_baseline = Path(output_path).resolve() == Path(selected.target.path).resolve()
+    duration_difference = float(verify_info.duration - reference_duration)
+    reference_duration_ok = abs(duration_difference) <= 0.50
+    difference_from_expected = float(verify_info.duration - expected_duration)
+    duration_ok = abs(difference_from_expected) <= 0.50
+    duration_check_enforced = bool(expected_duration > 0 and not is_original_baseline)
+    duration_fields = {
+        'duration_difference_from_reference': duration_difference,
+        'expected_output_duration': expected_duration,
+        'expected_duration_basis': expectation_basis,
+        'duration_difference_from_expected': difference_from_expected,
+        'reference_duration_ok': reference_duration_ok,
+        'duration_check_enforced': duration_check_enforced,
+        'is_original_baseline': is_original_baseline,
+    }
 
-    if expected_duration > 0 and not duration_ok:
+    if duration_check_enforced and not duration_ok:
         report_path = output_dir / FINAL_RENDER_VALIDATION_REPORT
         with report_path.open("w", encoding="utf-8") as file:
             file.write("FINAL RENDERED AUDIO VALIDATION\n")
             file.write("=" * 78 + "\n\n")
             file.write(f"OUTPUT: {output_path}\n")
-            file.write(f"EXPECTED REFERENCE DURATION: {expected_duration:.6f} s\n")
+            file.write(f"REFERENCE DURATION: {reference_duration:.6f} s\n")
+            file.write(f"EXPECTED OUTPUT DURATION: {expected_duration:.6f} s\n")
+            file.write(f"EXPECTED DURATION BASIS: {expectation_basis}\n")
             file.write(f"OUTPUT DURATION: {verify_info.duration:.6f} s\n")
-            file.write(f"DURATION DIFFERENCE: {duration_difference:+.6f} s\n")
-            file.write("STATUS: FAILED — rendered duration is inconsistent with Reference.\n")
+            file.write(f"OUTPUT - REFERENCE: {duration_difference:+.6f} s\n")
+            file.write(f"OUTPUT - EXPECTED: {difference_from_expected:+.6f} s\n")
+            file.write("DURATION CHECK ENFORCED: True\n")
+            file.write("STATUS: FAILED — rendered duration is inconsistent with the expected output duration.\n")
+        with (output_dir / FINAL_RENDER_VALIDATION_JSON).open('w',encoding='utf-8') as file:
+            json.dump({'output_file':str(output_path),'reference_duration':reference_duration,
+                       'output_duration':float(verify_info.duration),'duration_check':False,
+                       'status':'FAILED_DURATION',**duration_fields},file,ensure_ascii=False,indent=2)
         raise RuntimeError(
             "Критическая ошибка render: длительность готового файла не совпадает "
-            f"с Reference на {duration_difference:+.3f} s. "
+            f"с ожидаемой длительностью ({expectation_basis}) на {difference_from_expected:+.3f} s. "
             "Исходный TARGET не изменён. Подробности в FINAL_RENDER_VALIDATION_REPORT.txt."
         )
 
@@ -942,7 +970,16 @@ def verify_rendered_sync(
         file.write(f"OUTPUT DURATION: {verify_info.duration:.6f} s\n")
         diag=_duration_diagnostics(verify_info,selected.reference.duration)
         file.write(f"OUTPUT - REFERENCE: {duration_difference:+.6f} s\n")
-        file.write(f"DURATION CHECK: {'PASS' if duration_ok else 'FAIL'}\n")
+        file.write(f"REFERENCE DURATION MATCH: {'PASS' if reference_duration_ok else 'FAIL'}\n")
+        file.write(f"EXPECTED OUTPUT DURATION: {expected_duration:.6f} s\n")
+        file.write(f"EXPECTED DURATION BASIS: {expectation_basis}\n")
+        file.write(f"OUTPUT - EXPECTED: {difference_from_expected:+.6f} s\n")
+        file.write(f"IS ORIGINAL BASELINE: {is_original_baseline}\n")
+        file.write(f"DURATION CHECK ENFORCED: {duration_check_enforced}\n")
+        if is_original_baseline:
+            file.write('DURATION CHECK: NOT ENFORCED — original TARGET retained without creating a rendered file.\n')
+        else:
+            file.write(f"DURATION CHECK: {'PASS' if duration_ok else 'FAIL'}\n")
         file.write("DURATION INTERPRETATION: encoded output duration is reported separately from synchronization residuals.\n")
         if diag['codec_frame_duration_sec'] is not None:
             file.write(f"KNOWN CODEC FRAME DURATION: {diag['codec_frame_duration_sec']:.6f} s\n")
@@ -975,6 +1012,7 @@ def verify_rendered_sync(
                 "output_duration": float(verify_info.duration),
                 "duration_difference_from_reference": duration_difference,
                 "duration_check": duration_ok,
+                **duration_fields,
                 "duration_diagnostics": diag,
                 "metrics": metrics,
                 "validation_points": validation,
@@ -991,6 +1029,7 @@ def verify_rendered_sync(
         "output_info": verify_info,
         "duration_difference": duration_difference,
         "duration_ok": duration_ok,
+        **duration_fields,
         "duration_diagnostics": _duration_diagnostics(verify_info,selected.reference.duration),
         "rendered_first_channel_pcm": temp_pcm,
         "report_path": report_path,
