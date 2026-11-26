@@ -654,9 +654,12 @@ def prompt_before_apply(selected, final_sync_map, validation_metrics, codec_plan
     print()
     if guard_report is not None:
         mode = guard_report.get("mode", "")
-        if mode in {"NO_CHANGE", "PRESERVE_TARGET", "FALLBACK_BASELINE"}:
-            print("Дорожка уже практически синхронна или новая коррекция не прошла защитную проверку.")
-            print("Новая карта не будет ухудшать исходный TARGET.")
+        if mode == "FALLBACK_BASELINE":
+            print("Основная карта не прошла защитную проверку и применяться не будет.")
+            print("Далее отдельно проверим, можно ли улучшить исходную дорожку по PCM-отсчётам.")
+            print("Нулевые поправки здесь означают отказ от основной карты, а не доказанную синхронность дорожек.")
+        elif mode in {"NO_CHANGE", "PRESERVE_TARGET"}:
+            print("Надёжная основная коррекция не подтверждена. Сохраняем исходную дорожку.")
         elif mode in {"MIXED_SAFE_MAP", "MIXED_SAFE_MAP_DENSE"}:
             print("Применяется защищённая карта: подтверждённые улучшения сохранены, потенциально ухудшающие участки подавлены.")
         elif mode == "LOCAL_QUARANTINE_SAFE_MAP":

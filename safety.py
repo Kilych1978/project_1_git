@@ -22,6 +22,8 @@ import numpy as np
 
 from config import *
 from common import *
+from applier import MIN_APPLY_TEMPO, MAX_APPLY_TEMPO
+from map_geometry import limit_map_geometry
 
 # ---------------------------------------------------------------------------
 # Conservative safety thresholds.
@@ -150,6 +152,7 @@ def _validation_weights(validation_results):
         baseline_median = float(np.median(np.asarray(baseline_actual_values, dtype=np.float64)))
         baseline_p95 = float(np.percentile(np.asarray(baseline_actual_values, dtype=np.float64), 95))
     else:
+        before_values = [item['before'] for item in records]
         baseline_median = float(np.median(before_values))
         baseline_p95 = float(np.percentile(before_values, 95))
     already_synced = (
@@ -541,23 +544,17 @@ def build_non_regressive_sync_map(
     for value in (forced_reject_times or []):
         quarantine_centers.append(float(value))
 
-    # Deduplicate nearby centers so overlapping zones remain a single local
-    # exclusion region in the report.
-    quarantine_centers = sorted(quarantine_centers)
-    merged_quarantine_centers = []
-    merge_distance = max(float(quarantine_radius_sec), SAFETY_DENSE_VALIDATION_INTERVAL_SEC)
-    for value in quarantine_centers:
-        if not merged_quarantine_centers or abs(value - merged_quarantine_centers[-1]) > merge_distance:
-            merged_quarantine_centers.append(value)
-        else:
-            merged_quarantine_centers[-1] = (merged_quarantine_centers[-1] + value) / 2.0
-    quarantine_centers = merged_quarantine_centers
+    # Averaging nearby centres shrinks the union of their exclusion windows.
+    # Keep every distinct original centre so no rejected region can reappear.
+    quarantine_centers = sorted(set(quarantine_centers))
 
     quarantined_count = 0
+    quarantined_supported_count = 0
     for index, center in enumerate(validation_time):
         if _is_in_quarantine(float(center), quarantine_centers, float(quarantine_radius_sec)):
+            quarantined_count += 1
             if validation_weight[index] > 0.5:
-                quarantined_count += 1
+                quarantined_supported_count += 1
             validation_weight[index] = 0.0
             reasons[index] = "local quarantine"
             if index < len(decisions):
@@ -569,6 +566,19 @@ def build_non_regressive_sync_map(
         validation_time,
         validation_weight,
     )
+
+    # A favourable isolated checkpoint is not a supported interval. Previously
+    # the point override below resurrected it even where gate was zero, creating
+    # one-node spikes that could reverse time after resampling for rendering.
+    supported = np.zeros(len(validation_time),dtype=bool)
+    for start,end,_count,_span in runs:
+        supported[start:end+1] = True
+    isolated = (validation_weight > .5) & ~supported
+    for index in np.flatnonzero(isolated):
+        validation_weight[index] = 0.
+        reasons[index] = 'одиночная точка вне подтверждённого интервала'
+        decisions[index]['weight'] = 0.
+        decisions[index]['reason'] = reasons[index]
 
     candidate_at_validation = np.interp(
         validation_time,
@@ -594,11 +604,16 @@ def build_non_regressive_sync_map(
             barrier = np.abs(target_time - float(center)) <= float(quarantine_radius_sec)
             safe_offset[barrier] = 0.0
 
+    original_target_time = target_time
+    target_time,safe_offset,geometry_report = limit_map_geometry(
+        target_time,safe_offset,min_tempo=MIN_APPLY_TEMPO,max_tempo=MAX_APPLY_TEMPO)
     reference_time = target_time + safe_offset
     confidence = np.asarray(
-        candidate_map.get("confidence", np.ones_like(target_time)),
+        candidate_map.get("confidence", np.ones_like(original_target_time)),
         dtype=np.float64,
     )
+    if len(target_time) != len(original_target_time):
+        confidence = np.interp(target_time,original_target_time,confidence)
 
     result = {
         "target_time": target_time,
@@ -662,6 +677,7 @@ def build_non_regressive_sync_map(
         "quarantine_centers": [float(value) for value in quarantine_centers],
         "quarantine_radius_sec": float(quarantine_radius_sec),
         "quarantined_validation_points": int(quarantined_count),
+        "quarantined_previously_supported_points": int(quarantined_supported_count),
         "quarantine_fraction": (
             float(quarantined_count) / float(total_count) if total_count else 0.0
         ),
@@ -681,6 +697,8 @@ def build_non_regressive_sync_map(
             }
             for start, end, count, span in runs
         ],
+        "isolated_validation_points_rejected": int(np.count_nonzero(isolated)),
+        "geometry": geometry_report,
         "tolerance_sec": float(NO_REGRESSION_TOLERANCE_SEC),
         "clear_improvement_sec": float(NO_REGRESSION_CLEAR_IMPROVEMENT_SEC),
         "already_synced_threshold_sec": float(NO_REGRESSION_ALREADY_SYNCED_SEC),
@@ -746,6 +764,10 @@ def save_non_regression_report(
         file.write(
             f"ACCEPTED CONTIGUOUS RUNS: {len(guard_report.get('accepted_runs', []))}\n"
         )
+        file.write(f"ISOLATED POINTS REJECTED: {guard_report.get('isolated_validation_points_rejected', 0)}\n")
+        geometry=guard_report.get('geometry',{})
+        file.write(f"GEOMETRY LIMITED POINTS: {geometry.get('changed_points', 0)}\n")
+        file.write(f"GEOMETRY PRECISION FALLBACK COMPONENTS: {geometry.get('precision_neutralized_components', 0)}\n")
         file.write(
             f"MINIMUM ACCEPTED RUN: {guard_report['min_accepted_run_points']} points / "
             f"{guard_report['min_accepted_run_span_sec']:.1f} s\n"

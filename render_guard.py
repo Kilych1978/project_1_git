@@ -371,14 +371,9 @@ def save_micro_render_guard_csv(output_dir: Path, comparison: dict, pass_index: 
 
 
 def _merge_centers(times: list[float], radius_sec: float) -> list[float]:
-    values = sorted(float(t) for t in times)
-    merged: list[float] = []
-    for value in values:
-        if not merged or abs(value - merged[-1]) > float(radius_sec):
-            merged.append(value)
-        else:
-            merged[-1] = (merged[-1] + value) / 2.0
-    return merged
+    # Equal-radius windows cannot be replaced by their average centre without
+    # losing protected edges. Only exact duplicates may be removed.
+    return sorted(set(float(t) for t in times))
 
 
 def save_render_guard_csv(output_dir: Path, comparison: dict, pass_index: int):
@@ -501,6 +496,12 @@ def run_render_aware_safety_loop(
     final_comparison = None
     final_safe_map = current_safe_map
     selected_safe_result = False
+    # The preceding dense guard may already have rejected the coarse plan.
+    # Rebuilding candidate_map here would silently undo that decision.
+    preserve_initial_baseline = bool(
+        len(np.asarray(initial_safe_map['offset']))
+        and np.count_nonzero(np.asarray(initial_safe_map['offset'])) == 0
+    )
 
     guard_root = output_dir / "_render_guard"
     guard_root.mkdir(parents=True, exist_ok=True)
@@ -517,14 +518,19 @@ def run_render_aware_safety_loop(
         pass_dir.mkdir(parents=True, exist_ok=True)
 
         # Never modify the source TARGET; every pass starts from the original.
-        current_safe_map, pre_render_report = build_non_regressive_sync_map(
-            candidate_map,
-            dense_candidate_validation_results,
-            selected.target.duration,
-            Progress(context),
-            quarantine_times=quarantine_times,
-            quarantine_radius_sec=RENDER_GUARD_QUARANTINE_RADIUS_SEC,
-        )
+        if preserve_initial_baseline:
+            current_safe_map = initial_safe_map
+            pre_render_report = {'mode':'RETAIN_PREVIOUS_GUARD_BASELINE',
+                                 'reason':'Предыдущая проверка уже отклонила основную карту.'}
+        else:
+            current_safe_map, pre_render_report = build_non_regressive_sync_map(
+                candidate_map,
+                dense_candidate_validation_results,
+                selected.target.duration,
+                Progress(context),
+                quarantine_times=quarantine_times,
+                quarantine_radius_sec=RENDER_GUARD_QUARANTINE_RADIUS_SEC,
+            )
 
         max_abs = (
             float(np.max(np.abs(current_safe_map["offset"])))
@@ -754,7 +760,7 @@ def run_render_aware_safety_loop(
             "comparison": final_comparison,
         })
     else:
-        final_render["fallback_to_baseline"] = False
+        final_render["fallback_to_baseline"] = preserve_initial_baseline
         final_render["guard_passed"] = True
 
     selected_pass_path=str(final_render['output_path'])

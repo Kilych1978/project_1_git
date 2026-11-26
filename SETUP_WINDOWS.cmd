@@ -12,7 +12,7 @@ if not errorlevel 1 (
 )
 where python >nul 2>nul
 if errorlevel 1 (
-    echo Install Python 3.12 from python.org, then run setup again.
+    echo Установите Python 3.12 с python.org, затем повторите запуск.
     pause
     exit /b 1
 )
@@ -21,18 +21,18 @@ if errorlevel 1 exit /b 1
 :install
 ".venv\Scripts\python.exe" -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)"
 if errorlevel 1 (
-    echo Python 3.11 or newer is required. Install Python 3.12 and recreate the local .venv.
+    echo Требуется Python 3.11 или новее. Установите Python 3.12 и пересоздайте локальную .venv.
     pause
     exit /b 1
 )
 ".venv\Scripts\python.exe" -m pip install -r requirements.txt
 if errorlevel 1 (
-    echo Dependency installation failed. Check your connection to PyPI.
+    echo Не удалось установить зависимости. Проверьте доступ к PyPI.
     pause
     exit /b 1
 )
 ".venv\Scripts\python.exe" start_sync.py --check
 set "setup_exit=%errorlevel%"
-if not "%setup_exit%"=="0" echo Python packages installed. If FFmpeg is missing, follow README_RU.md.
+if not "%setup_exit%"=="0" echo Python-пакеты установлены. Если не найден FFmpeg, выполните инструкции в README_RU.md.
 pause
 exit /b %setup_exit%

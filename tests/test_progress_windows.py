@@ -54,10 +54,10 @@ class ProgressWindowTests(unittest.TestCase):
         for record in records:
             line=record.split('\n')[0]
             self.assertLessEqual(len(line),79)
-        self.assertIn('At 01:07:36',output.getvalue())
-        self.assertIn('Track: 01:27:32',output.getvalue())
-        self.assertIn('Scope: full reference track; scheduled checkpoints',output.getvalue())
-        self.assertIn('Pass: 2/11 (limit) | Grid: 1/2',output.getvalue())
+        self.assertIn('Позиция 01:07:36',output.getvalue())
+        self.assertIn('Длительность: 01:27:32',output.getvalue())
+        self.assertIn('Область: вся эталонная дорожка; контрольные точки',output.getvalue())
+        self.assertIn('Проход: 2/11 (предел) | Сетка: 1/2',output.getvalue())
         self.assertNotIn('→',output.getvalue())
         self.assertNotIn('4056.',output.getvalue())
         # Diagnostic millisecond formatting is deliberately unchanged.
@@ -66,8 +66,8 @@ class ProgressWindowTests(unittest.TestCase):
 
     def test_local_points_are_described_without_inventing_a_contiguous_chunk(self):
         lines=scope_lines(5252.,[912.098,913.,1090.,1140.1])
-        self.assertEqual(lines[0],'Checkpoints: 00:15:12 - 00:19:01 | Track: 01:27:32')
-        self.assertNotIn('full reference track',' '.join(lines))
+        self.assertEqual(lines[0],'Контрольные точки: 00:15:12 - 00:19:01 | Длительность: 01:27:32')
+        self.assertNotIn('вся эталонная дорожка',' '.join(lines))
         self.assertEqual(words(33.2),'00:00:33')
         self.assertEqual(words(97.8,'nearest'),'00:01:38')
 
@@ -76,8 +76,8 @@ class ProgressWindowTests(unittest.TestCase):
         with contextlib.redirect_stdout(out):
             p=_ProgressCallback('Запись всех каналов',seconds=True)
             p(4056.5,5252.01)
-        self.assertIn('At 01:07:36',out.getvalue())
-        self.assertIn('Track: 01:27:32',out.getvalue())
+        self.assertIn('Позиция 01:07:36',out.getvalue())
+        self.assertIn('Длительность: 01:27:32',out.getvalue())
 
 
 if __name__=='__main__':unittest.main()

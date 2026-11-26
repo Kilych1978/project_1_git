@@ -60,7 +60,7 @@ class DiagnosticTests(unittest.TestCase):
         frames = output.getvalue().split('\r')[1:]
         self.assertTrue(all(len(frame) <= 79 for frame in frames))
         self.assertIn('123/64065 точек', frames[0])
-        self.assertIn('ETA 00:14:12', frames[0])
+        self.assertIn('Осталось 00:14:12', frames[0])
         self.assertTrue(frames[1].rstrip().endswith('Коротко'))
         self.assertEqual(len(frames[1]), len(frames[0]))
 

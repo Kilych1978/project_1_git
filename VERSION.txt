@@ -1,2 +1,2 @@
-Universal Audio Waveform Sync - Modular v6.9.13
-English terminal UI; verified 6.9.12 processing engine retained
+Universal Audio Waveform Sync - Modular v6.9.14
+Русский интерфейс; исправлена безопасная подготовка карты перед записью

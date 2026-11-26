@@ -169,7 +169,7 @@ class ModularFixTests(unittest.TestCase):
             output = io.StringIO()
             with patch.object(scanner, 'BASE_DIR', directory), patch('builtins.input', side_effect=['1','1','y']), contextlib.redirect_stdout(output):
                 main()
-            self.assertIn('STEP 4/4', output.getvalue())
+            self.assertIn('ШАГ 4/4', output.getvalue())
             self.assertIn('[100.00%]', output.getvalue())
             report_path = next(directory.glob('*_WAVEFORM_SYNC/FINAL_SYNC_MAP.json'))
             report = json.loads(report_path.read_text())

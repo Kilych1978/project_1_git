@@ -17,10 +17,10 @@ if not errorlevel 1 (
     python start_sync.py %*
     goto finished
 )
-echo Python not found. Install Python 3.12 from python.org and run SETUP_WINDOWS.cmd.
+echo Python не найден. Установите Python 3.12 с python.org и запустите SETUP_WINDOWS.cmd.
 exit /b 1
 :finished
 set "sync_exit=%errorlevel%"
-if not "%sync_exit%"=="0" echo Processing exited with code %sync_exit%. Read the message and REPORT_RU.txt if available.
+if not "%sync_exit%"=="0" echo Обработка завершилась с кодом %sync_exit%. Прочитайте сообщение и REPORT_RU.txt, если отчёт создан.
 if "%~1"=="" pause
 exit /b %sync_exit%

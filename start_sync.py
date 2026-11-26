@@ -2,13 +2,9 @@ from __future__ import annotations
 
 import sys
 from launcher import main
-from console_en import english_console
 
 
 if __name__ == "__main__":
-    # Keep setup/errors English as well; this context lasts until process exit.
-    _terminal = english_console()
-    _terminal.__enter__()
     try:
         if sys.argv[1:] == ['--check']:
             from pcm_core.audio import find_tools
@@ -43,7 +39,7 @@ if __name__ == "__main__":
         print()
         print()
         print("=" * 78)
-        print("CRITICAL ERROR")
+        print("ОШИБКА ОБРАБОТКИ")
         print("=" * 78)
         print()
         print(str(exc))

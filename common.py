@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Optional
 
 from config import BASE_DIR
-from console_en import english
+from progress_display import display_text
 
 
 @dataclass
@@ -97,7 +97,7 @@ class Progress:
         if Progress._display_stream is not sys.stdout:
             Progress._display_stream=sys.stdout
             Progress._display_heading=Progress._display_scope=None
-        lines=english(f'{self.context} | {name}' if self.context else name).splitlines()
+        lines=display_text(f'{self.context} | {name}' if self.context else name).splitlines()
         title=lines[0] if lines else ''
         width=min(78,max(20,shutil.get_terminal_size().columns-1))
         if title!=Progress._display_heading:
@@ -105,7 +105,7 @@ class Progress:
             for part in textwrap.wrap(title,width=width,break_long_words=False,break_on_hyphens=False):print(part)
             Progress._display_heading=title
         for line in lines[1:]:
-            is_scope=line.startswith(('Scope:','Checkpoints:','Checkpoint:'))
+            is_scope=line.startswith(('Область:','Контрольные точки:','Контрольная точка:'))
             if is_scope and line==Progress._display_scope:continue
             if is_scope:Progress._display_scope=line
             print(line)
@@ -133,10 +133,10 @@ class Progress:
         line = f"[{percent:6.2f}%]"
 
         if self.context:
-            line += f" {english(self.context)} |"
+            line += f" {display_text(self.context)} |"
 
         if message:
-            line += f" {english(message)}"
+            line += f" {display_text(message)}"
 
         if processed_sec is not None:
             line += (

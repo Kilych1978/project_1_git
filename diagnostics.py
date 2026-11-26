@@ -18,7 +18,7 @@ import tempfile
 import time
 import traceback
 import zipfile
-from console_en import english_session
+from console_ru import russian_session
 
 _SESSION = ContextVar('waveform_diagnostic_session', default=None)
 VOLUME_LIMIT = 25 * 1024 * 1024
@@ -221,7 +221,7 @@ def register_output(directory):
 def diagnostic_session(function):
     """Wrap either launcher, including failures and user interruption."""
     @wraps(function)
-    @english_session
+    @russian_session
     def run(*args, **kwargs):
         if _SESSION.get() is not None:
             return function(*args, **kwargs)
