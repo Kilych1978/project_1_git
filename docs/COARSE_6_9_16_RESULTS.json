@@ -89,5 +89,18 @@
       "output_encoder": "pcm_s16le",
       "guard_passed": true
     }
-  ]
+  ],
+  "classic_regression": {
+    "input": "generated DTS + six-channel S16 WAV",
+    "duration_sec": 240.0,
+    "delay_sec": 0.275,
+    "alignment_backend": "CLASSIC",
+    "all_twelve_stages_passed": true,
+    "source_hashes_unchanged": true,
+    "verified_fine_windows": 483,
+    "median_residual_less_than_one_sample": true,
+    "output_pcm16": true,
+    "output_did_not_double_size": true,
+    "scope": "Synthetic regression of the preserved path, not the full user material."
+  }
 }
