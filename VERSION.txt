@@ -1,2 +1,2 @@
-Universal Audio Waveform Sync - Modular v6.9.15
-Симметричная проверка; устойчивый поиск; отдельный итог синхронизации
+Universal Audio Waveform Sync - Modular v6.9.16
+Общий звук разных миксов; независимая проверка записанного PCM

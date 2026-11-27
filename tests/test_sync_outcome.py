@@ -28,6 +28,34 @@ class SynchronizationOutcomeTests(unittest.TestCase):
     def setUpClass(cls):
         cls.recorded = json.loads((Path(__file__).parent / 'fixtures/sync_outcome_20261127.json').read_text(encoding='utf-8'))
 
+    def spectral_rows(self, residual=.005, uncertainty=.060):
+        return [dict(target_time=float(t),reference_time=float(t),bidir_status='CONFIRMED_MAP',
+                     bidir_consensus_offset=residual,bidir_left_correlation=.9,
+                     bidir_right_correlation=.9,bidir_disagreement=.01,
+                     feature_backend=True,uncertainty_sec=uncertainty)
+                for t in (10,30,50,70,90,110)]
+
+    def test_coarse_uncertainty_cannot_be_presented_as_precise_alignment(self):
+        rows=self.spectral_rows()
+        result=assess_sync_outcome({'validation_points':rows},duration=120.,output_created=False)
+        self.assertEqual(result['status'],'UNVERIFIED')
+        self.assertFalse(result['alignment_confirmed'])
+        self.assertEqual(result['spectral_measured_windows'],6)
+        self.assertEqual(result['spectral_evidence']['trusted_windows'],0)
+
+    def test_spectral_residual_lower_bound_proves_a_remaining_large_offset(self):
+        rows=self.spectral_rows(.15,.02)
+        result=assess_sync_outcome({'validation_points':rows},duration=120.,output_created=False)
+        self.assertEqual(result['status'],'NOT_SYNCHRONIZED')
+        self.assertEqual(result['confirmed_mismatch_count'],6)
+
+    def test_uncertain_feature_peak_does_not_invalidate_precise_verified_pcm(self):
+        rows=self.spectral_rows(.035,.060)
+        pcm=[pcm_window(t) for t in (10.,30.,50.,70.,90.,110.)]
+        result=assess_sync_outcome({'validation_points':rows},
+            {'status':'PCM_REFINED','actual_output_windows':pcm},duration=120.,output_created=True)
+        self.assertEqual(result['status'],'SYNCHRONIZED')
+
     def test_recorded_retained_source_is_not_declared_synchronized(self):
         data = self.recorded
         result = assess_sync_outcome(data['verification'], data['pcm_report'],

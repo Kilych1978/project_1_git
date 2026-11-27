@@ -122,6 +122,8 @@ def _validation_weights(validation_results):
             "left_corr": left_corr,
             "right_corr": right_corr,
             "disagreement": disagreement,
+            "feature_uncertainty": (max(0., float(result.get('uncertainty_sec') or 0.))
+                                    if result.get('feature_backend') else 0.),
         })
 
     if not records:
@@ -179,7 +181,7 @@ def _validation_weights(validation_results):
         status = item["status"]
 
         clear_improvement = (
-            after <= before - NO_REGRESSION_CLEAR_IMPROVEMENT_SEC
+            after <= before - NO_REGRESSION_CLEAR_IMPROVEMENT_SEC - 2*item['feature_uncertainty']
         )
         confirmed_map = status == "CONFIRMED_MAP"
         strong_two_sided = (
@@ -190,7 +192,7 @@ def _validation_weights(validation_results):
         confirmed_discrepancy = status == "CONFIRMED_DISCREPANCY"
         candidate_offset = abs(float(item.get("predicted_offset", 0.0) or 0.0))
         meaningful_change = candidate_offset >= NO_REGRESSION_MIN_MEANINGFUL_CORRECTION_SEC
-        meaningful_benefit = (before - after) >= NO_REGRESSION_MIN_MEANINGFUL_IMPROVEMENT_SEC
+        meaningful_benefit = (before - after) >= NO_REGRESSION_MIN_MEANINGFUL_IMPROVEMENT_SEC + 2*item['feature_uncertainty']
 
         if confirmed_discrepancy:
             weight = 0.0
@@ -372,6 +374,104 @@ def _is_in_quarantine(target_time: float, quarantine_times, radius_sec: float) -
     return any(abs(time_value - float(center)) <= radius for center in quarantine_times)
 
 
+def _feature_source_support(validation_results, minimum_span, target_start, target_end):
+    """Find independently known source intervals without assigning UNKNOWN a clock.
+
+    Spectral rows are ordered on their fixed reference query grid. An unknown
+    event breaks support, even when nearby protected PCM rows are measurable.
+    Only an explicitly observed source event may supply interval coordinates.
+    """
+    feature_rows = [row for row in validation_results if row.get('feature_backend')]
+    report = {'applied': bool(feature_rows), 'checkpoints': len(feature_rows),
+              'unknown_checkpoints': 0, 'nonmonotone_checkpoints': 0,
+              'invalid_reference_checkpoints': 0, 'confirmed_source_checkpoints': 0,
+              'supported_source_checkpoints': 0, 'source_intervals': [],
+              'source_coverage_seconds': 0.0, 'source_coverage_fraction': 0.0,
+              'zeroed_outside_supported_nodes': 0}
+    if not feature_rows:
+        return report
+
+    def finite(value):
+        try:
+            value = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return value if np.isfinite(value) else None
+
+    ordered = []
+    for row in feature_rows:
+        reference_time = finite(row.get('comparison_reference_time', row.get('reference_time')))
+        if reference_time is None:
+            report['invalid_reference_checkpoints'] += 1
+        else:
+            ordered.append((reference_time, row))
+    # An observation with an unknown reference location cannot be placed in
+    # the sequence safely. Never guess its source position from target_time.
+    if report['invalid_reference_checkpoints']:
+        report['unknown_checkpoints'] = len(feature_rows)
+        return report
+    ordered.sort(key=lambda item: item[0])
+    run = []
+    last_reference = -float('inf')
+    last_source = -float('inf')
+
+    def commit():
+        if len(run) < SAFETY_MIN_ACCEPTED_RUN_POINTS:
+            return
+        span = run[-1][1] - run[0][1]
+        if span < minimum_span:
+            return
+        report['source_intervals'].append({
+            'start_time_sec': run[0][1], 'end_time_sec': run[-1][1],
+            'points': len(run), 'span_sec': span,
+            'reference_start_time_sec': run[0][0], 'reference_end_time_sec': run[-1][0],
+        })
+        report['supported_source_checkpoints'] += len(run)
+
+    for reference_time, row in ordered:
+        source_time = finite(row.get('source_event_time'))
+        known = (row.get('source_event_known') is True
+                 and row.get('feature_status') == 'CONFIRMED'
+                 and source_time is not None and target_start <= source_time <= target_end
+                 and finite(row.get('before_error')) is not None
+                 and finite(row.get('after_error')) is not None)
+        if reference_time <= last_reference or (known and source_time <= last_source):
+            report['nonmonotone_checkpoints'] += 1
+            known = False
+        last_reference = reference_time
+        if not known:
+            commit()
+            run = []
+            report['unknown_checkpoints'] += 1
+            continue
+        last_source = source_time
+        report['confirmed_source_checkpoints'] += 1
+        run.append((reference_time, source_time))
+    commit()
+    coverage = sum(interval['span_sec'] for interval in report['source_intervals'])
+    report['source_coverage_seconds'] = float(coverage)
+    report['source_coverage_fraction'] = float(coverage / max(target_end - target_start, 1e-12))
+    return report
+
+
+def _constrain_to_feature_support(target_time, safe_offset, support):
+    if not support['applied']:
+        return target_time, safe_offset
+    # Exact zero knots at fractional boundaries prevent interpolation from
+    # leaking a correction into an unsupported interval between map samples.
+    boundaries = [value for interval in support['source_intervals']
+                  for value in (interval['start_time_sec'], interval['end_time_sec'])]
+    new_time = np.unique(np.r_[target_time, boundaries]) if boundaries else target_time
+    new_offset = np.interp(new_time, target_time, safe_offset)
+    allowed = np.zeros(len(new_time), dtype=bool)
+    for interval in support['source_intervals']:
+        allowed |= ((new_time > interval['start_time_sec']) &
+                    (new_time < interval['end_time_sec']))
+    support['zeroed_outside_supported_nodes'] = int(np.count_nonzero(new_offset[~allowed]))
+    new_offset[~allowed] = 0.0
+    return new_time, new_offset
+
+
 def assess_safe_validation(
     validation_results,
     excluded_times=None,
@@ -528,7 +628,9 @@ def build_non_regressive_sync_map(
             "Недостаточно независимых dense validation-точек для безопасной защиты карты."
         )
 
-    order = np.argsort(validation_time)
+    protected_pcm = any(row.get('evidence_kind') == 'protected_first_channel_pcm'
+                        for row in validation_results)
+    order = np.argsort(validation_time, kind='stable') if protected_pcm else np.argsort(validation_time)
     validation_time = validation_time[order]
     validation_weight = validation_weight[order]
     reasons = [reasons[i] for i in order]
@@ -613,6 +715,29 @@ def build_non_regressive_sync_map(
             safe_offset[barrier] = 0.0
 
     original_target_time = target_time
+    minimum_span = min(
+        SAFETY_MIN_RUN_SPAN_SEC,
+        float(validation_time[1] - validation_time[0]) * max(1, SAFETY_MIN_ACCEPTED_RUN_POINTS - 1)
+        if len(validation_time) > 1 else SAFETY_MIN_RUN_SPAN_SEC,
+    )
+    from coarse_clock import verify_global_clock
+    global_clock_proof = verify_global_clock(candidate_map, validation_results, target_duration,
+        quarantined=bool(quarantine_centers or forced_reject_times))
+    if global_clock_proof is not None:
+        # A globally confirmed affine clock is a different hypothesis from
+        # isolated LOCAL corrections. Fading a pure delay to zero at both ends
+        # creates an artificial tempo change and can destroy correct audio.
+        target_time = original_target_time
+        safe_offset = candidate_offset.copy()
+        gate = np.ones_like(target_time)
+        feature_support = {'active':False,'policy':'independently_verified_global_clock',
+            'global_clock_proof':global_clock_proof,
+            'unknown_points':sum(r.get('feature_backend') and r.get('feature_status')!='CONFIRMED'
+                                 for r in validation_results)}
+    else:
+        feature_support = _feature_source_support(
+            validation_results, minimum_span, float(target_time[0]), float(target_time[-1]))
+        target_time, safe_offset = _constrain_to_feature_support(target_time, safe_offset, feature_support)
     target_time,safe_offset,geometry_report = limit_map_geometry(
         target_time,safe_offset,min_tempo=MIN_APPLY_TEMPO,max_tempo=MAX_APPLY_TEMPO)
     reference_time = target_time + safe_offset
@@ -653,7 +778,9 @@ def build_non_regressive_sync_map(
     baseline_p95 = float(np.percentile(before_values, 95)) if before_values else None
 
     no_change = max_abs_safe <= NO_REGRESSION_ZERO_MAP_SEC
-    if no_change:
+    if global_clock_proof is not None:
+        mode = 'VERIFIED_GLOBAL_CLOCK'
+    elif no_change:
         mode = "NO_CHANGE"
     elif quarantine_centers:
         mode = "LOCAL_QUARANTINE_SAFE_MAP"
@@ -707,6 +834,7 @@ def build_non_regressive_sync_map(
         ],
         "isolated_validation_points_rejected": int(np.count_nonzero(isolated)),
         "geometry": geometry_report,
+        "feature_support": feature_support,
         "tolerance_sec": float(NO_REGRESSION_TOLERANCE_SEC),
         "clear_improvement_sec": float(NO_REGRESSION_CLEAR_IMPROVEMENT_SEC),
         "already_synced_threshold_sec": float(NO_REGRESSION_ALREADY_SYNCED_SEC),
@@ -776,6 +904,16 @@ def save_non_regression_report(
         geometry=guard_report.get('geometry',{})
         file.write(f"GEOMETRY LIMITED POINTS: {geometry.get('changed_points', 0)}\n")
         file.write(f"GEOMETRY PRECISION FALLBACK COMPONENTS: {geometry.get('precision_neutralized_components', 0)}\n")
+        feature_support = guard_report.get('feature_support', {})
+        if feature_support.get('applied'):
+            file.write(f"FEATURE CHECKPOINTS: {feature_support['checkpoints']}\n")
+            file.write(f"UNKNOWN FEATURE CHECKPOINTS: {feature_support['unknown_checkpoints']}\n")
+            file.write(f"FEATURE SOURCE SUPPORT: {feature_support['source_coverage_seconds']:.3f} s "
+                       f"({feature_support['source_coverage_fraction'] * 100:.2f}%)\n")
+            file.write(f"CONFIRMED FEATURE SOURCE INTERVALS: {len(feature_support['source_intervals'])}\n")
+            for interval in feature_support['source_intervals']:
+                file.write(f"  {interval['start_time_sec']:.6f} .. {interval['end_time_sec']:.6f} s; "
+                           f"points={interval['points']}\n")
         file.write(
             f"MINIMUM ACCEPTED RUN: {guard_report['min_accepted_run_points']} points / "
             f"{guard_report['min_accepted_run_span_sec']:.1f} s\n"

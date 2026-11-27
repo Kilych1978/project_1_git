@@ -225,6 +225,13 @@ def register_sync_outcome(outcome):
         session['synchronization_outcome'] = outcome
 
 
+def register_analysis_resource(resource):
+    """Close optional on-disk analysis banks when either launcher finishes."""
+    session = _SESSION.get()
+    if session is not None:
+        session.setdefault('analysis_resources', []).append(resource)
+
+
 def diagnostic_session(function):
     """Wrap either launcher, including failures and user interruption."""
     @wraps(function)
@@ -249,6 +256,11 @@ def diagnostic_session(function):
             _SESSION.reset(token)
             output = state['output']
             try:
+                for resource in reversed(state.get('analysis_resources', [])):
+                    try:
+                        resource.close()
+                    except Exception as exc:
+                        capture.write('\nAnalysis resource cleanup: ' + str(exc) + '\n')
                 if capture.pending:
                     capture._line()
                 capture.flush()

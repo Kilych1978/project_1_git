@@ -904,18 +904,33 @@ def verify_rendered_sync(
         "reference_envelope": analysis["reference_envelope"],
         "target_envelope": target_envelope,
     }
+    actual_evidence = None
+    if analysis.get('coarse_evidence') is not None:
+        actual_evidence = analysis['coarse_evidence'].for_output(verify_info, output_dir, progress)
+        try:
+            if hasattr(actual_evidence, 'set_rendered_pcm'):
+                actual_evidence.set_rendered_pcm(temp_pcm)
+        except BaseException:
+            if hasattr(actual_evidence, 'close'):
+                actual_evidence.close()
+            raise
+        verify_analysis['coarse_evidence'] = actual_evidence
 
     duration = float(decoded["duration"])
     zero_map = build_zero_sync_map(duration)
 
-    if duration >= 45.0:
-        validation = validate_sync_map(
-            verify_analysis,
-            zero_map,
-            duration,
-            progress,
-            validation_interval_sec=float(validation_interval_sec),
-        )
+    if actual_evidence is not None or duration >= 45.0:
+        try:
+            validation = validate_sync_map(
+                verify_analysis,
+                zero_map,
+                duration,
+                progress,
+                validation_interval_sec=float(validation_interval_sec),
+            )
+        finally:
+            if actual_evidence is not None and hasattr(actual_evidence, 'close'):
+                actual_evidence.close()
     else:
         window_sec = max(2.0, min(20.0, duration * 0.40))
         radius_sec = max(0.20, min(3.0, duration * 0.10))

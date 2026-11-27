@@ -410,6 +410,14 @@ def validate_sync_map(
     совпадений, которые раньше превращались в HARD outliers.
     """
 
+    evidence = analysis.get('coarse_evidence')
+    if evidence is not None:
+        return evidence.validate(
+            sync_map, target_duration, progress,
+            interval_sec=(VALIDATION_INTERVAL_SEC if validation_interval_sec is None
+                          else float(validation_interval_sec)),
+        )
+
     progress.stage(
         "НЕЗАВИСИМАЯ ПРОВЕРКА КАРТЫ",
         0.0,

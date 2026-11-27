@@ -32,6 +32,7 @@ from micro_refiner import *
 from pcm_refiner import refine_rendered_audio
 from diagnostics import diagnostic_session, register_sync_outcome
 from sync_outcome import assess_sync_outcome, saved_baseline_plan, save_sync_outcome
+from coarse_alignment import run_general_alignment_stage, NoCommonAudio
 
 @diagnostic_session
 def main():
@@ -127,12 +128,16 @@ def main():
     print("ШАГ 3/12")
     print("-" * 78)
 
-    alignment = run_alignment_stage(
-        selected,
-        output_dir,
-        analysis,
-        progress,
-    )
+    try:
+        alignment = run_general_alignment_stage(selected, output_dir, analysis, progress)
+    except NoCommonAudio as error:
+        outcome = assess_sync_outcome({}, output_created=False)
+        outcome['message_ru'] = str(error) + ' Новый аудиофайл не создан; исходные дорожки сохранены.'
+        save_sync_outcome(output_dir, outcome)
+        register_sync_outcome(outcome)
+        print(outcome['headline_ru'])
+        print(outcome['message_ru'])
+        return
 
     print_initial_alignment_report(alignment, output_dir)
 
@@ -223,6 +228,9 @@ def main():
         selected.target.duration,
         confidence_progress,
     )
+    if analysis.get('coarse_evidence') is not None:
+        from coarse_clock import map_with_global_clock
+        confidence_map = map_with_global_clock(confidence_map, analysis['coarse_evidence'].global_clock)
 
     comparison = compare_old_new_maps(
         base_map_result["map"],
@@ -280,8 +288,12 @@ def main():
     print("ШАГ 7/12")
     print("-" * 78)
     print()
-    print("МИКРО-УТОЧНЕНИЕ: локальная проверка формы волны с детализацией 1 мс")
-    print("Сравнение: 5-мс окна с шагом 1 мс вокруг уже найденной карты.")
+    if analysis.get('coarse_evidence') is not None:
+        print("ПРОВЕРКА КРУПНОГО ВЫРАВНИВАНИЯ ПО ОБЩИМ ЗВУКОВЫМ СОБЫТИЯМ")
+        print("Точное PCM-уточнение будет выполнено после применения крупной карты.")
+    else:
+        print("МИКРО-УТОЧНЕНИЕ: локальная проверка формы волны с детализацией 1 мс")
+        print("Сравнение: 5-мс окна с шагом 1 мс вокруг уже найденной карты.")
 
     micro_dense_progress = Progress()
     micro_dense_results = validate_sync_map(
@@ -292,13 +304,17 @@ def main():
         validation_interval_sec=SAFETY_DENSE_VALIDATION_INTERVAL_SEC,
     )
 
-    micro_result = refine_sync_map_with_micro_waveform(
-        analysis,
-        final_sync_map,
-        micro_dense_results,
-        output_dir,
-        Progress(),
-    )
+    if analysis.get('coarse_evidence') is not None:
+        from coarse_alignment import defer_pcm_micro_until_render
+        micro_result = defer_pcm_micro_until_render(final_sync_map, output_dir)
+    else:
+        micro_result = refine_sync_map_with_micro_waveform(
+            analysis,
+            final_sync_map,
+            micro_dense_results,
+            output_dir,
+            Progress(),
+        )
 
     final_sync_map = micro_result["sync_map"]
 
@@ -1033,6 +1049,7 @@ def main():
             'BASELINE_KEPT' if render_result.get('copied_without_reencode') else 'COARSE_REFINED'),
         "generated_by": Path(sys.argv[0]).name,
         "algorithm": "confidence-aware nonlinear waveform map + dense safety + render-aware non-regression",
+        "coarse_evidence_kind": analysis.get('coarse_evidence_kind', 'first_channel_envelope'),
     }
 
     with final_map_json.open("w", encoding="utf-8") as file:

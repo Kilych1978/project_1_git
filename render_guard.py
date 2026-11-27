@@ -84,6 +84,10 @@ def _baseline_correlation(record: dict) -> float | None:
 
 
 def _rendered_estimate(record: dict):
+    if record.get('feature_backend'):
+        # A missing spectral observation has no numerical substitute. In
+        # particular, the original BEFORE lag is not a measurement of output.
+        return record.get('after_offset'), record.get('after_correlation')
     raw_offset=record.get('after_offset')
     if raw_offset is None:raw_offset=record.get('before_offset')
     offset,correlation,_ = _independent_estimate(
@@ -105,17 +109,22 @@ def _rendered_correlation(record: dict) -> float | None:
 
 
 def _same_time_records(baseline_results: list[dict], rendered_results: list[dict]):
+    def key(item):
+        if item.get('comparison_key') is not None:
+            return ('comparison', item['comparison_key'])
+        return ('target', round(float(item['target_time']), 6))
+
     baseline_by_time = {}
     for item in baseline_results:
         try:
-            baseline_by_time[round(float(item["target_time"]), 6)] = item
+            baseline_by_time[key(item)] = item
         except Exception:
             continue
 
     pairs = []
     for item in rendered_results:
         try:
-            time_sec = round(float(item["target_time"]), 6)
+            time_sec = key(item)
         except Exception:
             continue
         baseline = baseline_by_time.get(time_sec)
@@ -147,13 +156,31 @@ def compare_rendered_against_original(
         baseline_corr = _baseline_correlation(baseline)
         rendered_corr = _rendered_correlation(rendered)
 
+        if rendered.get('feature_verification_lost'):
+            row = {
+                'target_time_sec': time_sec,
+                'baseline_error_sec': baseline_error,
+                'rendered_error_sec': None, 'error_delta_sec': None,
+                'baseline_correlation': baseline_corr,
+                'rendered_correlation': None, 'correlation_delta': None,
+                'error_regression': False, 'correlation_regression': False,
+                'verification_lost': True, 'regression': True,
+            }
+            rows.append(row)
+            regressions.append(row)
+            continue
+
         if baseline_error is None or rendered_error is None:
             continue
 
         delta = rendered_error - baseline_error
         improvement = baseline_error - rendered_error
 
-        error_regression = delta > RENDER_GUARD_TOLERANCE_SEC
+        tolerance = RENDER_GUARD_TOLERANCE_SEC
+        if baseline.get('feature_backend') and rendered.get('feature_backend'):
+            tolerance += (float(baseline.get('before_uncertainty_sec') or 0.0)
+                          + float(rendered.get('uncertainty_sec') or 0.0))
+        error_regression = delta > tolerance
         correlation_regression = False
         if (
             baseline_corr is not None
@@ -185,7 +212,7 @@ def compare_rendered_against_original(
 
         if regression:
             regressions.append(row)
-        elif improvement > RENDER_GUARD_TOLERANCE_SEC:
+        elif improvement > tolerance:
             improvements.append(row)
 
     considered = len(rows)
@@ -392,9 +419,9 @@ def save_render_guard_csv(output_dir: Path, comparison: dict, pass_index: int):
             writer.writerow([
                 pass_index,
                 f"{row['target_time_sec']:.3f}",
-                f"{row['baseline_error_sec']:.6f}",
-                f"{row['rendered_error_sec']:.6f}",
-                f"{row['error_delta_sec']:+.6f}",
+                "" if row['baseline_error_sec'] is None else f"{row['baseline_error_sec']:.6f}",
+                "" if row['rendered_error_sec'] is None else f"{row['rendered_error_sec']:.6f}",
+                "" if row['error_delta_sec'] is None else f"{row['error_delta_sec']:+.6f}",
                 "" if row["baseline_correlation"] is None else f"{row['baseline_correlation']:.6f}",
                 "" if row["rendered_correlation"] is None else f"{row['rendered_correlation']:.6f}",
                 "" if row["correlation_delta"] is None else f"{row['correlation_delta']:+.6f}",
@@ -423,6 +450,9 @@ def _write_pass_summary(pass_dir: Path, pass_index: int, comparison: dict, quara
         if comparison["regressions"]:
             file.write("НАЙДЕННЫЕ УХУДШЕНИЯ:\n")
             for row in comparison["regressions"]:
+                if row.get('verification_lost'):
+                    file.write(f"  {row['target_time_sec']:.3f} с: ранее подтверждённый общий звук не подтверждён в готовом файле.\n")
+                    continue
                 file.write(
                     f"  {row['target_time_sec']:.3f} с: "
                     f"{row['baseline_error_sec']*1000.0:.3f} мс -> "
@@ -542,6 +572,15 @@ def run_render_aware_safety_loop(
                 selected.target,
                 codec_plan,
                 pass_dir,
+            )
+        elif analysis.get('coarse_evidence') is not None:
+            # The spectral branch supplies an absolute source clock. Apply
+            # that clock continuously at native rate, without segmented WSOLA
+            # changing local events before their independent verification.
+            from coarse_native_render import render_native_coarse
+            render_result = render_native_coarse(
+                selected, current_safe_map, pass_dir, Progress(context),
+                codec_plan=codec_plan,
             )
         else:
             apply_map = build_apply_map(
@@ -809,6 +848,9 @@ def run_render_aware_safety_loop(
         if comparison.get("regressions"):
             file.write("\n  Оставшиеся ухудшения:\n")
             for row in comparison["regressions"]:
+                if row.get('verification_lost'):
+                    file.write(f"    {row['target_time_sec']:.3f} с: утрачено независимое подтверждение общего звука.\n")
+                    continue
                 file.write(
                     f"    {row['target_time_sec']:.3f} с: "
                     f"{row['baseline_error_sec']*1000.0:.3f} -> "

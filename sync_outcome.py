@@ -99,6 +99,7 @@ def assess_sync_outcome(verification, pcm_report=None, *, output_created=False,
             improved.append(record)
 
     envelope = []
+    spectral = []
     ambiguous_count = 0
     weak_count = 0
     for row in envelope_rows:
@@ -116,14 +117,28 @@ def assess_sync_outcome(verification, pcm_report=None, *, output_created=False,
         if (residual is None or left is None or right is None or min(left, right) < .30
                 or disagreement is None or disagreement > .080):
             continue
-        envelope.append({'time': row.get('target_time'), 'residual_sec': residual,
-                         'source': 'bidirectional_envelope'})
+        item = {'time': row.get('reference_time', row.get('target_time')),
+                'residual_sec': residual, 'source': 'bidirectional_envelope'}
+        if row.get('feature_backend'):
+            uncertainty = _number(row.get('uncertainty_sec'))
+            if uncertainty is None or uncertainty < 0:
+                continue
+            item.update(source='spectral_common_audio', uncertainty_sec=uncertainty)
+            spectral.append(item)
+        else:
+            envelope.append(item)
 
     pcm_coverage = _coverage(pcm, len(pcm_rows), duration)
     envelope_coverage = _coverage(envelope, len(envelope_rows), duration)
+    spectral_schedule = sum(bool(row.get('feature_backend')) for row in envelope_rows)
+    spectral_aligned = [row for row in spectral
+                        if abs(row['residual_sec'])+row['uncertainty_sec'] <= ALIGNMENT_TOLERANCE_SEC]
+    spectral_coverage = _coverage(spectral_aligned, spectral_schedule, duration)
     pcm_mismatches = [row for row in pcm if abs(row['residual_sec']) > ALIGNMENT_TOLERANCE_SEC]
     envelope_mismatches = [row for row in envelope if abs(row['residual_sec']) > ALIGNMENT_TOLERANCE_SEC]
-    mismatches = pcm_mismatches + envelope_mismatches
+    spectral_mismatches = [row for row in spectral
+                          if abs(row['residual_sec'])-row['uncertainty_sec'] > ALIGNMENT_TOLERANCE_SEC]
+    mismatches = pcm_mismatches + envelope_mismatches + spectral_mismatches
     pcm_bad = any(row.get('status') in ('REGRESSION', 'RESIDUAL_TOO_LARGE') for row in pcm_rows)
     verified_pcm_improvement = (pcm_report.get('status') == 'PCM_REFINED'
                                 and len(improved) >= 3 and not pcm_bad)
@@ -132,7 +147,8 @@ def assess_sync_outcome(verification, pcm_report=None, *, output_created=False,
                                    and not render_guard.get('fallback_to_baseline')
                                    and int(comparison.get('improvement_count', 0) or 0) > 0)
     improvement_verified = bool(output_created and (verified_pcm_improvement or verified_coarse_improvement))
-    common_sufficient = pcm_coverage['sufficient'] or envelope_coverage['sufficient']
+    common_sufficient = (pcm_coverage['sufficient'] or envelope_coverage['sufficient']
+                         or spectral_coverage['sufficient'])
     alignment_confirmed = bool(common_sufficient and not mismatches and not pcm_bad)
     if mismatches or pcm_bad:
         status = 'IMPROVED_NOT_FULLY_ALIGNED' if improvement_verified else 'NOT_SYNCHRONIZED'
@@ -172,7 +188,9 @@ def assess_sync_outcome(verification, pcm_report=None, *, output_created=False,
             'confirmed_mismatch_count': len(mismatches),
             'largest_confirmed_mismatch_sec': max((abs(row['residual_sec']) for row in mismatches), default=None),
             'pcm_evidence_source': pcm_source, 'pcm_evidence': pcm_coverage,
-            'envelope_evidence': envelope_coverage, 'ambiguous_envelope_windows': ambiguous_count,
+            'envelope_evidence': envelope_coverage, 'spectral_evidence': spectral_coverage,
+            'spectral_measured_windows': len(spectral),
+            'ambiguous_envelope_windows': ambiguous_count,
             'weak_envelope_windows': weak_count,
             'non_regression_passed': render_guard.get('passed'),
             'process_completion_is_alignment_proof': False}
@@ -194,6 +212,9 @@ def save_sync_outcome(directory, outcome):
              'Допуск итоговой оценки в проверенных окнах: 20 мс.',
              'Надёжных PCM-окон: ' + str(outcome['pcm_evidence']['trusted_windows']),
              'Надёжных двусторонних окон огибающей: ' + str(outcome['envelope_evidence']['trusted_windows']),
+             'Измеренных спектральных окон: ' + str(outcome.get('spectral_measured_windows', 0)),
+             'Спектральных окон с подтверждённой границей точности 20 мс: '
+             + str(outcome.get('spectral_evidence', {}).get('trusted_windows', 0)),
              'Подтверждённых окон с остатком выше допуска: ' + str(outcome['confirmed_mismatch_count']),
              '', 'Это оценка по измеренным общим звуковым окнам, а не гарантия совпадения неизвестного или различающегося звука.']
     (directory / 'SYNC_OUTCOME_RU.txt').write_text('\n'.join(lines) + '\n', encoding='utf-8-sig')
