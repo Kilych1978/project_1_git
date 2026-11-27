@@ -40,9 +40,33 @@ def find_ffmpeg(root):
 
 
 def extract_first_channel(source, destinations, ffmpeg, log_path, show_progress=True):
-    """Sequential sample counting: no imprecise elementary-DTS seeking."""
-    records = [(round(start*RATE),round(duration*RATE),path) for start,duration,path in destinations]
+    """Original mono API; explicitly select channel 0 instead of downmixing."""
+    extract_channels(source,destinations,ffmpeg,log_path,1,show_progress,first_channel=True)
+
+
+def extract_channels(source, destinations, ffmpeg, log_path, channels, show_progress=True, *, first_channel=False):
+    """Export input channels by sequential sample counting; never seek raw DTS.
+
+    `channels` must be the probed source channel count. The mono compatibility
+    wrapper alone sets first_channel=True. Returned positions are PCM frames,
+    not interleaved scalar samples. RAM is bounded by eight small pipe blocks.
+    """
+    if type(channels) is not int or not 1<=channels<=64:
+        raise ValueError('Недопустимое число каналов источника.')
+    if first_channel and channels!=1:
+        raise ValueError('Для первого канала число выходных каналов должно быть равно 1.')
+    records=[]
+    for start,duration,path in destinations:
+        if not math.isfinite(start) or not math.isfinite(duration) or start<0 or duration<=0:
+            raise ValueError('Некорректные границы звукового фрагмента.')
+        begin,count=round(start*RATE),round(duration*RATE)
+        if count<=0:
+            raise ValueError('Звуковой фрагмент должен содержать хотя бы один PCM-отсчёт.')
+        records.append((begin,count,Path(path)))
+    if not records:
+        raise ValueError('Не указаны фрагменты для сохранения.')
     last_sample = max(start+count for start,count,_ in records)
+    frame_bytes=2*channels
     writers, counts = [], [0]*len(records)
     chunks = queue.Queue(maxsize=8)
     stop = threading.Event()
@@ -53,17 +77,18 @@ def extract_first_channel(source, destinations, ffmpeg, log_path, show_progress=
     try:
         for _,_,path in records:
             writer = wave.open(str(path),'wb')
-            writer.setnchannels(1);writer.setsampwidth(2);writer.setframerate(RATE)
+            writer.setnchannels(channels);writer.setsampwidth(2);writer.setframerate(RATE)
             writers.append(writer)
         with log_path.open('wb') as errors:
+            channel_filter=['-af','pan=mono|c0=c0'] if first_channel else []
             process = subprocess.Popen([ffmpeg,'-hide_banner','-nostdin','-v','warning','-i',str(source),
-                '-map','0:a:0','-af','pan=mono|c0=c0','-ar',str(RATE),'-ac','1','-f','s16le','pipe:1'],
+                '-map','0:a:0',*channel_filter,'-ar',str(RATE),'-ac',str(channels),'-f','s16le','pipe:1'],
                 stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=errors)
 
             def receive():
                 try:
                     while not stop.is_set():
-                        block = process.stdout.read(131072)
+                        block = process.stdout.read(8192*frame_bytes)
                         while not stop.is_set():
                             try:
                                 chunks.put(block,timeout=.2)
@@ -73,8 +98,12 @@ def extract_first_channel(source, destinations, ffmpeg, log_path, show_progress=
                         if not block:
                             break
                 except Exception as exc:
-                    if not stop.is_set():
-                        chunks.put(exc)
+                    while not stop.is_set():
+                        try:
+                            chunks.put(exc,timeout=.2)
+                            break
+                        except queue.Full:
+                            pass
 
             worker = threading.Thread(target=receive,daemon=True)
             worker.start()
@@ -87,13 +116,13 @@ def extract_first_channel(source, destinations, ffmpeg, log_path, show_progress=
                     raise block
                 if not block:
                     raise RuntimeError('Дорожка закончилась до одной из указанных точек.')
-                if len(block)%2:
-                    raise RuntimeError('Получен неполный PCM-отсчёт.')
-                end = decoded+len(block)//2
+                if len(block)%frame_bytes:
+                    raise RuntimeError('Получен неполный многоканальный PCM-отсчёт.')
+                end = decoded+len(block)//frame_bytes
                 for i,(begin,count,_) in enumerate(records):
                     lo,hi = max(decoded,begin),min(end,begin+count)
                     if hi > lo:
-                        writers[i].writeframesraw(block[(lo-decoded)*2:(hi-decoded)*2])
+                        writers[i].writeframesraw(block[(lo-decoded)*frame_bytes:(hi-decoded)*frame_bytes])
                         counts[i] += hi-lo
                 decoded = end
                 if show_progress and time.monotonic()-last_print >= .5:
@@ -104,6 +133,8 @@ def extract_first_channel(source, destinations, ffmpeg, log_path, show_progress=
                     print('\r'+message[:width].ljust(width),end='',flush=True)
             if counts != [count for _,count,_ in records]:
                 raise RuntimeError('Один из фрагментов записан не полностью.')
+            return {'sample_rate':RATE,'channels':channels,'requested_last_frame':last_sample,
+                    'decoded_frames':decoded,'written_frames':counts,'sequential_decode':True}
     finally:
         stop.set()
         if process is not None:

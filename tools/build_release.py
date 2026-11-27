@@ -5,7 +5,7 @@ from pathlib import Path
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-NAME = 'Universal_Audio_Waveform_Sync_modular_v6.9.14'
+NAME = 'Universal_Audio_Waveform_Sync_modular_v6.9.15'
 
 
 def main():
@@ -14,7 +14,9 @@ def main():
     for path in ROOT.rglob('*'):
         relative = path.relative_to(ROOT)
         if any(part in {'.git', '.venv', '__pycache__', 'releases', 'dist', '.pytest_cache', '.mpl-cache'}
-               or '_WAVEFORM_SYNC' in part for part in relative.parts):
+               or '_WAVEFORM_SYNC' in part
+               or part.startswith(('SOURCE_CHANNEL_DIAGNOSTICS_', 'AUDIO_POINT_DIAGNOSTICS_'))
+               for part in relative.parts):
             continue
         if path.is_file() and (path.suffix.lower() in allowed or path.name == '.gitignore'):
             if path.name != 'MANIFEST_SHA256.json':
@@ -29,7 +31,7 @@ def main():
     destination = directory / (NAME + '.zip')
     with zipfile.ZipFile(destination, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in files:
-            item = zipfile.ZipInfo(NAME + '/' + path.relative_to(ROOT).as_posix(), (2026, 11, 26, 0, 0, 0))
+            item = zipfile.ZipInfo(NAME + '/' + path.relative_to(ROOT).as_posix(), (2026, 11, 27, 0, 0, 0))
             item.compress_type = zipfile.ZIP_DEFLATED
             item.external_attr = 0o100644 << 16
             archive.writestr(item, path.read_bytes())

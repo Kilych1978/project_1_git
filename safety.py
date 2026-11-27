@@ -24,6 +24,7 @@ from config import *
 from common import *
 from applier import MIN_APPLY_TEMPO, MAX_APPLY_TEMPO
 from map_geometry import limit_map_geometry
+from validator import _independent_estimate
 
 # ---------------------------------------------------------------------------
 # Conservative safety thresholds.
@@ -138,9 +139,16 @@ def _validation_weights(validation_results):
     # meaningful absolute timing displacement.
     baseline_actual_values = []
     for result in validation_results:
-        actual = result.get("before_bidirectional_offset")
-        if actual is None:
-            actual = result.get("before_offset")
+        if "before_selected_offset" in result:
+            actual = result["before_selected_offset"]
+        else:
+            actual, _, _ = _independent_estimate(
+                {"offset": result.get("before_offset"),
+                 "correlation": result.get("before_correlation", 0.0)},
+                {"consensus_offset": result.get("before_bidirectional_offset"),
+                 "consensus_correlation": result.get("before_bidirectional_correlation", 0.0),
+                 "status": result.get("before_bidirectional_status", "CONFIRMED_MAP")},
+            )
         if actual is None:
             continue
         try:

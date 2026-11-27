@@ -1,0 +1,47 @@
+{
+  "version": "6.9.15",
+  "date": "2026-11-27",
+  "scope": "Saved-measurement replay and generated-audio checks; not a complete user-track render",
+  "full_test_suite": {"passed": 135, "failed": 0, "elapsed_sec": 160.162},
+  "source_collector_tests": {"passed": 4, "new_tests": 3, "repeated_legacy_test": 1, "failed": 0, "elapsed_sec": 30.104},
+  "user_run": {
+    "version": "6.9.14",
+    "output_created": false,
+    "result_status": "BASELINE_KEPT",
+    "assessed_synchronization_status": "NOT_SYNCHRONIZED",
+    "identical_coarse_and_final_diagnostic_pairs": 10,
+    "bidirectional_discrepancies": 63,
+    "ambiguous_envelope_windows": 440,
+    "verified_coarse_delay_example_sec": 1.28
+  },
+  "saved_measurement_replay": {
+    "control_points": 522,
+    "candidate_reconstruction_max_error_sec": 0.0,
+    "legacy_identity_false_regressions": 318,
+    "corrected_identity_false_regressions": 0,
+    "corrected_identity_false_improvements": 0,
+    "legacy_quarantined_points": 484,
+    "legacy_quarantine_fraction": 0.9272030651340997,
+    "corrected_quarantined_points": 0,
+    "corrected_retained_control_points": 33,
+    "corrected_retained_intervals": 6,
+    "corrected_remaining_confirmed_discrepancies": 41,
+    "new_audio_search_or_full_render_performed": false
+  },
+  "coarse_pipeline_smoke": {
+    "duration_sec": 240.0,
+    "all_twelve_stages_completed": true,
+    "reference": "Generated DTS 5.1",
+    "target": "Generated six-channel PCM WAV",
+    "output_channels": 6,
+    "output_rate": 48000,
+    "output_codec": "pcm_s16le",
+    "source_hashes_unchanged": true,
+    "final_envelope_median_error_sec": 0.001,
+    "final_envelope_max_error_sec": 0.013,
+    "fine_pcm_excluded_only_in_this_coarse_smoke": true
+  },
+  "fine_pcm_implementation_and_thresholds_changed": false,
+  "complete_user_tracks_available": false,
+  "windows_execution_tested_here": false
+}

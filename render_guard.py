@@ -26,6 +26,7 @@ import numpy as np
 from config import *
 from common import *
 from applier import build_apply_map
+from validator import _independent_estimate
 from renderer import (
     render_target_with_sync_map,
     copy_target_without_reencode,
@@ -58,56 +59,49 @@ RENDER_GUARD_CSV = "RENDER_AWARE_NON_REGRESSION.csv"
 RENDER_GUARD_JSON = "RENDER_AWARE_NON_REGRESSION.json"
 
 
+def _baseline_estimate(record: dict):
+    if 'before_selected_offset' in record:
+        return record.get('before_selected_offset'),record.get('before_selected_correlation',0.0)
+    # Old diagnostics may omit the status entirely. Preserve that legacy
+    # schema, but an explicit AMBIGUOUS/UNRESOLVED status never authorizes its
+    # consensus to replace the full-window measurement.
+    offset,correlation,_ = _independent_estimate(
+        {'offset':record.get('before_offset'),'correlation':record.get('before_correlation',0.0)},
+        {'consensus_offset':record.get('before_bidirectional_offset'),
+         'consensus_correlation':record.get('before_bidirectional_correlation',0.0),
+         'status':record.get('before_bidirectional_status','CONFIRMED_MAP')})
+    return offset,correlation
+
+
 def _baseline_error(record: dict) -> float | None:
-    """Фактическая ошибка исходного TARGET относительно нулевого смещения."""
-    for key in ("before_bidirectional_offset", "before_offset"):
-        value = record.get(key)
-        if value is None:
-            continue
-        try:
-            return abs(float(value))
-        except Exception:
-            continue
-    return None
+    value,_ = _baseline_estimate(record)
+    return None if value is None else abs(float(value))
 
 
 def _baseline_correlation(record: dict) -> float | None:
-    for key in ("before_bidirectional_correlation", "before_correlation"):
-        value = record.get(key)
-        if value is None:
-            continue
-        try:
-            return float(value)
-        except Exception:
-            continue
-    return None
+    _,value = _baseline_estimate(record)
+    return None if value is None else float(value)
+
+
+def _rendered_estimate(record: dict):
+    raw_offset=record.get('after_offset')
+    if raw_offset is None:raw_offset=record.get('before_offset')
+    offset,correlation,_ = _independent_estimate(
+        {'offset':raw_offset,'correlation':record.get('after_correlation',record.get('before_correlation',0.0))},
+        {'consensus_offset':record.get('bidir_consensus_offset'),
+         'consensus_correlation':record.get('bidir_consensus_correlation',0.0),
+         'status':record.get('bidir_status','CONFIRMED_MAP')})
+    return offset,correlation
 
 
 def _rendered_error(record: dict) -> float | None:
-    """Фактическая ошибка готового файла относительно нулевого смещения."""
-    value = record.get("bidir_consensus_offset")
-    if value is None:
-        value = record.get("after_offset")
-    if value is None:
-        value = record.get("before_offset")
-    if value is None:
-        return None
-    try:
-        return abs(float(value))
-    except Exception:
-        return None
+    value,_ = _rendered_estimate(record)
+    return None if value is None else abs(float(value))
 
 
 def _rendered_correlation(record: dict) -> float | None:
-    for key in ("bidir_consensus_correlation", "after_correlation", "before_correlation"):
-        value = record.get(key)
-        if value is None:
-            continue
-        try:
-            return float(value)
-        except Exception:
-            continue
-    return None
+    _,value = _rendered_estimate(record)
+    return None if value is None else float(value)
 
 
 def _same_time_records(baseline_results: list[dict], rendered_results: list[dict]):

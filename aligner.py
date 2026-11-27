@@ -106,6 +106,13 @@ MIN_LOCAL_CORRELATION = 0.15
 # однозначным.
 MIN_LOCAL_PEAK_MARGIN = 0.005
 
+# A candidate can be recorded without becoming the clock for the next search.
+# Weak dubbed/stereo matches used to move that clock by seconds repeatedly,
+# putting the shared audio outside the next search radius. Require the same
+# signal strength used for strong confidence anchors before advancing it.
+MIN_TRACKING_CORRELATION = 0.55
+MIN_TRACKING_PEAK_MARGIN = 0.025
+
 
 # ------------------------------------------------------------
 # JPEG
@@ -1004,10 +1011,10 @@ def build_local_anchor_table(
             result["offset"] is not None
             and
             result["correlation"]
-            >= MIN_LOCAL_CORRELATION
+            >= max(MIN_LOCAL_CORRELATION, MIN_TRACKING_CORRELATION)
             and
             result["margin"]
-            >= MIN_LOCAL_PEAK_MARGIN
+            >= max(MIN_LOCAL_PEAK_MARGIN, MIN_TRACKING_PEAK_MARGIN)
         ):
 
             expected_offset = (

@@ -218,6 +218,13 @@ def register_output(directory):
         session['capture'].bind(Path(directory))
 
 
+def register_sync_outcome(outcome):
+    """Processing completion and independently measured alignment are separate."""
+    session = _SESSION.get()
+    if session is not None:
+        session['synchronization_outcome'] = outcome
+
+
 def diagnostic_session(function):
     """Wrap either launcher, including failures and user interruption."""
     @wraps(function)
@@ -250,6 +257,11 @@ def diagnostic_session(function):
                     version = Path(__file__).with_name('VERSION.txt').read_text(encoding='utf-8').strip()
                     info = {'status': status, 'version': version, 'python': sys.version,
                             'platform': platform.platform(), 'mode': function.__module__}
+                    outcome = state.get('synchronization_outcome')
+                    if outcome is not None:
+                        info['synchronization_outcome'] = outcome
+                        info['synchronization_status'] = outcome['status']
+                        info['synchronization_confirmed'] = outcome['alignment_confirmed']
                     (output / 'RUN_INFO.json').write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding='utf-8')
                     paths = build_bundle(output)
                     print('\nДИАГНОСТИКА: приложите к сообщению ' + ('этот архив:' if len(paths) == 1 else 'все эти архивы:'))

@@ -365,6 +365,34 @@ def bidirectional_validation_check(
 # НЕЗАВИСИМАЯ ВАЛИДАЦИЯ
 # ============================================================
 
+def _independent_estimate(raw, bidirectional):
+    """Select one measurement policy for both baseline and candidate.
+
+    An average of disagreeing half-windows is not a verified delay. Keep it in
+    the diagnostics, but use the independent full-window measurement on both
+    sides when the bidirectional measurement is unresolved or ambiguous.
+    """
+    trusted = bidirectional.get('status') in {
+        'CONFIRMED_MAP', 'CONFIRMED_DISCREPANCY', 'CONSISTENT_BUT_WEAK',
+    }
+    if trusted and bidirectional.get('consensus_offset') is not None:
+        offset = bidirectional['consensus_offset']
+        correlation = bidirectional.get('consensus_correlation', 0.0)
+        estimator = 'bidirectional_consensus'
+    else:
+        offset = raw.get('offset')
+        correlation = raw.get('correlation', 0.0)
+        estimator = 'full_window'
+    try:
+        offset = None if offset is None else float(offset)
+        correlation = float(correlation or 0.0)
+        if offset is not None and not math.isfinite(offset):offset = None
+        if not math.isfinite(correlation):correlation = 0.0
+    except (TypeError,ValueError,OverflowError):
+        offset,correlation = None,0.0
+    return offset,correlation,estimator
+
+
 def validate_sync_map(
     analysis,
     sync_map,
@@ -460,28 +488,11 @@ def validate_sync_map(
             hop_sec,
         )
 
-        # При согласованной двусторонней проверке именно консенсус
-        # считается независимой оценкой фактического offset.
-        if bidir["consensus_offset"] is not None and bidir["status"] in {
-            "CONFIRMED_MAP",
-            "CONFIRMED_DISCREPANCY",
-            "CONSISTENT_BUT_WEAK",
-        }:
-            final_after_offset = float(bidir["consensus_offset"])
-            final_after_corr = float(bidir["consensus_correlation"])
-        else:
-            final_after_offset = raw_after["offset"]
-            final_after_corr = float(raw_after["correlation"])
-
-        # Для non-regression и статистики BEFORE используем
-        # bidirectional baseline. Старый full-window результат
-        # сохраняем отдельно только как диагностический legacy offset.
-        if before_bidir["consensus_offset"] is not None:
-            baseline_offset_for_metrics = float(
-                before_bidir["consensus_offset"]
-            )
-        else:
-            baseline_offset_for_metrics = before["offset"]
+        # The same estimator-selection policy is essential: a zero map must
+        # never compare an ambiguous half-window average with a full-window
+        # peak and then report that difference as a regression.
+        final_after_offset,final_after_corr,after_estimator = _independent_estimate(raw_after,bidir)
+        baseline_offset_for_metrics,baseline_corr_for_metrics,before_estimator = _independent_estimate(before,before_bidir)
 
         if baseline_offset_for_metrics is not None and final_after_offset is not None:
             before_error = abs(float(baseline_offset_for_metrics))
@@ -498,6 +509,10 @@ def validate_sync_map(
             "before_bidirectional_offset": before_bidir["consensus_offset"],
             "before_bidirectional_correlation": before_bidir["consensus_correlation"],
             "before_bidirectional_status": before_bidir["status"],
+            "before_selected_offset": baseline_offset_for_metrics,
+            "before_selected_correlation": baseline_corr_for_metrics,
+            "before_estimator": before_estimator,
+            "after_estimator": after_estimator,
             "before_error_raw": (
                 None
                 if before["offset"] is None
@@ -573,12 +588,9 @@ def calculate_validation_metrics(
 
     before_corr = np.asarray(
         [
-            r["before_correlation"]
+            r.get("before_selected_correlation", r.get("before_correlation"))
             for r in results
-            if r[
-                "before_correlation"
-            ]
-            is not None
+            if r.get("before_selected_correlation", r.get("before_correlation")) is not None
         ],
         dtype=np.float64,
     )

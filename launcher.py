@@ -30,7 +30,8 @@ from safety import *
 from render_guard import *
 from micro_refiner import *
 from pcm_refiner import refine_rendered_audio
-from diagnostics import diagnostic_session
+from diagnostics import diagnostic_session, register_sync_outcome
+from sync_outcome import assess_sync_outcome, saved_baseline_plan, save_sync_outcome
 
 @diagnostic_session
 def main():
@@ -957,6 +958,17 @@ def main():
         final_verification,
     )
 
+    synchronization_outcome = assess_sync_outcome(
+        final_verification,
+        pcm_report,
+        output_created=not bool(render_result.get('copied_without_reencode')),
+        baseline_plan=saved_baseline_plan(output_dir),
+        render_guard=render_guard_report,
+        duration=selected.reference.duration,
+    )
+    save_sync_outcome(output_dir, synchronization_outcome)
+    register_sync_outcome(synchronization_outcome)
+
     # ========================================================
     # FINAL JSON
     # ========================================================
@@ -1014,6 +1026,9 @@ def main():
         "final_render_duration_diagnostics": final_verification.get("duration_diagnostics", {}),
         "final_effectiveness_report": str(final_effectiveness_report),
         "audio_rendered": not bool(render_result.get('copied_without_reencode', False)),
+        "synchronization_status": synchronization_outcome['status'],
+        "synchronization_confirmed": synchronization_outcome['alignment_confirmed'],
+        "synchronization_outcome": synchronization_outcome,
         "result_status": pcm_report['status'] if pcm_report['status']=='PCM_REFINED' else (
             'BASELINE_KEPT' if render_result.get('copied_without_reencode') else 'COARSE_REFINED'),
         "generated_by": Path(sys.argv[0]).name,
@@ -1035,6 +1050,10 @@ def main():
     print("=" * 78)
     print("ФИНАЛЬНЫЙ РЕЗУЛЬТАТ")
     print("=" * 78)
+    print()
+    print(synchronization_outcome['headline_ru'])
+    print(synchronization_outcome['message_ru'])
+    print('Подробная итоговая оценка: SYNC_OUTCOME_RU.txt')
     print()
     print("Reference:", selected.reference.path.name)
     print("Target   :", selected.target.path.name)
@@ -1089,6 +1108,6 @@ def main():
     print(f"Общее время: {elapsed / 60.0:.2f} min")
     print()
     print("=" * 78)
-    print("ГОТОВО")
+    print(synchronization_outcome['headline_ru'])
     print("=" * 78)
     print()

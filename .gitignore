@@ -4,6 +4,8 @@ __pycache__/
 .pytest_cache/
 .mpl-cache/
 *_WAVEFORM_SYNC*/
+SOURCE_CHANNEL_DIAGNOSTICS_*/
+AUDIO_POINT_DIAGNOSTICS_*/
 build/
 dist/
 *.egg-info/

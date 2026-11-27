@@ -1,6 +1,11 @@
-# Сборка Modular 6.9.14
+# Сборка Modular 6.9.15
 
-[Скачать ZIP](https://raw.githubusercontent.com/Kilych1978/project_1_git/refs/heads/main/releases/Universal_Audio_Waveform_Sync_modular_v6.9.14.zip)
+Исправлены ложные ухудшения в проверке карты и перенос поиска по слабым
+совпадениям. Итог синхронизации теперь показывается отдельно от завершения
+расчётов. Для разбора сложной пары есть `COLLECT_SOURCE_CLIPS.cmd`:
+он собирает короткие фрагменты исходников со всеми каналами.
+
+[Скачать ZIP](https://raw.githubusercontent.com/Kilych1978/project_1_git/refs/heads/main/releases/Universal_Audio_Waveform_Sync_modular_v6.9.15.zip)
 
 Скачайте архив и распакуйте в новую папку. Инструкция внутри — README_RU.md.
 Контрольная сумма находится рядом в файле `.zip.sha256`.
